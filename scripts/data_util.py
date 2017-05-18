@@ -40,7 +40,8 @@ def prep(df,pat = True,normalize=True,weekday=True):
     if normalize is True:
         key = lambda x : x.dayofyear
         zscore = lambda x : (x-x.mean())/x.std()
-        zscore = lambda x : (x - np.min(x)) / (np.max(x) - np.min(x))
+#        zscore = lambda x : (x - np.min(x)) / (np.max(x) - np.min(x))
+        zscore = lambda x : np.log(x)
         df1 = df.set_index('time_window_s')['volume'].groupby(key).transform(zscore)
 #        print(df1.groupby(key).mean())
 #        print(df1.groupby(key).std())
@@ -142,10 +143,11 @@ def plot_tollgate_volume(df,t_seq,k=1):
     print(t_seq[0],t_seq[-1])
     df = df[df['tollgate_id']==k][['time_window_s','direction','volume']].set_index('time_window_s')
     print('direction 0',len(df[df['direction']==0]))
-    plt.plot(df[df['direction']==0].ix[t_seq]['volume'])
+#    print(df[df['direction']==0].loc[t_seq,:]['volume'])
+    plt.plot(df[df['direction']==0].loc[t_seq,:]['volume'])
     plt.show()
     print('direction 1',len(df[df['direction']==1]))
-    plt.plot(df[df['direction']==1].ix[t_seq]['volume'])
+    plt.plot(df[df['direction']==1].loc[t_seq,:]['volume'])
     plt.show()
     
 class model1:
@@ -176,26 +178,26 @@ class model1:
 def main():
 
     in_file = 'training_20min_avg_volume.csv'
-#    df = load_volume(in_file)
+    df = load_volume(in_file)
 #    df = prep(df)
-#    t_seq = pd.date_range(start='09/19/2016',end='9/30/2016',freq='20Min')
-#    t_seq1 = pd.date_range(start='10/1/2016',end='10/7/2016',freq='20Min')
-#    t_seq2 = pd.date_range(start='10/8/2016',end='10/17/2016',freq='20Min')
-#    plot_tollgate_volume(df,t_seq,k=1)
+    t_seq = pd.date_range(start='09/19/2016 06:00',end='9/19/2016 10:00',freq='20Min')
+    t_seq1 = pd.date_range(start='10/1/2016',end='10/7/2016',freq='20Min')
+    t_seq2 = pd.date_range(start='10/8/2016',end='10/17/2016',freq='20Min')
+    plot_tollgate_volume(df,t_seq,k=1)
 #    plot_tollgate_volume(df,t_seq1,k=1)
 #    plot_tollgate_volume(df,t_seq2,k=1)
 #    get_all_batch(df,t_seq,k=1)
 
-    in_file=r'E:\大数据实践\天池大赛KDD CUP\data\dataSets\training\volume(table 6)_training.csv'
-    model = model1()
-    df = model.load_volume_hour(fdir=in_file)
-    df = prep(df)
-    print(df.dtypes)
-    print(df.head(100))
-    t_seq = pd.date_range(start='09/19/2016',periods=20,freq='T')
-    print(len(t_seq))
-    x_list,y_list = get_all_batch(df,t_seq,k=1)
-    print(np.array(x_list).shape)
-    print(np.array(y_list).shape)
+#    in_file=r'E:\大数据实践\天池大赛KDD CUP\data\dataSets\training\volume(table 6)_training.csv'
+#    model = model1()
+#    df = model.load_volume_hour(fdir=in_file)
+#    df = prep(df)
+#    print(df.dtypes)
+#    print(df.head(100))
+#    t_seq = pd.date_range(start='09/19/2016',periods=20,freq='T')
+#    print(len(t_seq))
+#    x_list,y_list = get_all_batch(df,t_seq,k=1)
+#    print(np.array(x_list).shape)
+#    print(np.array(y_list).shape)
 if __name__ == '__main__':
     main()

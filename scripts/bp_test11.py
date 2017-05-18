@@ -20,6 +20,8 @@ from pandas.tseries.offsets import Week
 from pandas.tseries.offsets import Day
 from pandas.tseries.offsets import Minute
 
+import matplotlib.pyplot as plt
+
 
 class bp_net:
     '''
@@ -80,7 +82,7 @@ class bp_net:
             loss = tf.nn.l2_loss(a_2 - self.y_true)
             
             #other loss
-            #loss = -tf.reduce_sum(ys * tf.log(a_2))
+#            loss = -tf.reduce_sum(self.y_true * tf.log(a_2))
 #            loss = tf.Print(loss, [loss], "cost") #print to the console 
             #step = tf.train.GradientDescentOptimizer(0.01).minimize(loss)
             optimizer = tf.train.AdamOptimizer(learning_rate=1e-4).minimize(loss,self.global_step)
@@ -234,22 +236,22 @@ class bp_net:
         return 1-error_rate(self.predict(_X),_Y)
 ################################################################################    
     
-def gen_df(freq='T'):
+def gen_df(freq='T',normalize = False):
     '''
     help fun
     '''
     if freq is '20Min':
         df = load_volume(fdir='training_20min_avg_volume.csv')
-        train_seq = produce_seq(start='09/19/2016 00:20',periods=20,freq='20Min',days = 7)
-        test_seq = produce_seq(start='09/26/2016 00:20',periods=20,freq='20Min',days = 7)
-        df = prep(df,pat=True,normalize=True)
+        train_seq = produce_seq(start='09/19/2016 00:20',periods=6,freq='20Min',days = 1)
+        test_seq = produce_seq(start='09/19/2016 00:20',periods=6,freq='20Min',days = 1)
+        df = prep(df,pat=True,normalize=normalize)
     elif freq is 'T':
         in_file=r'E:\大数据实践\天池大赛KDD CUP\data\dataSets\training\volume(table 6)_training.csv'
         model = model1()
         df = model.load_volume_hour(fdir=in_file)
         train_seq = produce_seq(start='09/19/2016 00:20',periods=20,freq='T',days = 7)
-        test_seq = produce_seq(start='09/26/2016 00:20',periods=20,freq='T',days = 7)
-        df = prep(df,pat=True,normalize=False)
+        test_seq = produce_seq(start='09/26/2016 00:20',periods=20,freq='T',days = 1)
+        df = prep(df,pat=True,normalize=normalize)
     else:
         sys.exit(0)
     return df,train_seq,test_seq
@@ -271,6 +273,25 @@ def next_20min(seq, m=20):
     add constant time to seq
     '''
     return seq + Minute(m)
+
+def plot_pred(pred,y_true):
+    '''
+    input :pred,true
+    datashape : [[1,2],[1,2]]
+    
+    '''    
+    pred = np.exp(pred)
+    y_true = np.exp(y_true)
+    print(pred.shape)
+    print(pred[:,0])
+    print(pred[:,0].flatten().shape)
+    plt.plot(pred[:,0].flatten(),'blue')
+    plt.plot(pred[:,1].flatten(),'red')
+    plt.plot(y_true[:,0].flatten(),'*')
+    plt.plot(y_true[:,1].flatten(),'+')
+    plt.show()
+    
+    
     
 ###############################################################################
 def train(freq = '20Min'):
@@ -291,14 +312,15 @@ def train(freq = '20Min'):
     bp = bp_net()
     N,D = x_data.shape
     K = len(y_data[0])
+    bp.middle = 100
     bp.training_iters = 5000
     bp.build(D,K)
     bp.fit(x_data,y_data,test_x,test_y)
-    
+    print(train_seq)
 def test(freq = '20Min'):
-    df,train_seq,test_seq = gen_df(freq)
+    df,train_seq,test_seq = gen_df(freq,normalize=True)
     #模型训练了一天的这个时间段，看看能够预测多少天的数据
-    for i in range(15):
+    for i in range(7):
         test_seq = test_seq + DateOffset(days=1)
         print(test_seq[0])
         batch_x,batch_y = get_all_batch(df,test_seq,k=1)
@@ -310,7 +332,8 @@ def test(freq = '20Min'):
         pred = model.predict(batch_x)
         print(np.sum(pred,axis=0))
         print(np.sum(batch_y,axis=0))
-
+        plot_pred(pred,batch_y)
+    print(test_seq)
 
 def next_train(freq = 'T'):
     df,train_seq,test_seq = gen_df(freq)
@@ -359,12 +382,18 @@ def next_test(freq = '20Min'):
         
         
 if __name__ == '__main__':
-    train(freq='T')
-    test(freq='T')
+#    train(freq='T')
+#    test(freq='T')
 #    train(freq='20Min')
-#    test(freq='20Min')
-    next_train(freq='T')
-    next_test(freq='T')
+    test(freq='20Min')
+#    next_train(freq='T')
+#    next_test(freq='T')
+
+
+
+
+
+
     '''
     输入点为当前时间t
     输出为需要预测的时间t+T
