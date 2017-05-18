@@ -20,7 +20,7 @@ def load_volume(fdir='training_20min_avg_volume.csv'):
     df.loc[:,'time_window_s']=pd.to_datetime(df['time_window_s'],format=r'%Y/%m/%d %H:%M:%S')
     return df
     
-def prep(df,pat = True,normalize=True):
+def prep(df,pat = True,normalize=True,weekday=True):
     #add some patten here
     if pat is True:
         different_volume = [0,1,2]
@@ -35,7 +35,6 @@ def prep(df,pat = True,normalize=True):
         df3.loc[:,'pattern'] = 2
         df = pd.concat([df1,df2,df3])
         df = df.reset_index()
-        print(df.head())
     #Adaptive and Natural Computing Algorithms: 10th International Conference ..
     #normalize the traffic flow data to daily average
     if normalize is True:
@@ -43,10 +42,14 @@ def prep(df,pat = True,normalize=True):
         zscore = lambda x : (x-x.mean())/x.std()
         zscore = lambda x : (x - np.min(x)) / (np.max(x) - np.min(x))
         df1 = df.set_index('time_window_s')['volume'].groupby(key).transform(zscore)
-        print(df1.groupby(key).mean())
-        print(df1.groupby(key).std())
+#        print(df1.groupby(key).mean())
+#        print(df1.groupby(key).std())
         df.loc[:,'volume'] = df1.values
 #    print(df.dtypes)
+    if weekday is True:
+        s = pd.Series(df['time_window_s'].dt.weekday,index=df.index,name='dayofweek')
+        df = df.join(s)
+    print(df.head())
     return df
 
 def load_weather(fdir='weather (table 7)_training_update.csv'):
@@ -113,22 +116,25 @@ def next_batch(df,t='2016/9/19 00:00',k=1):
     df1 = df[(df['tollgate_id']==k) & (df['time_window_s']==t_a20)]
     df1 = fun(df1)
     pattern = df1['pattern'].tolist()[0]
-    return pd.concat(batch_list),df1,pattern
+    dayofweek = df1['dayofweek'].tolist()[0]
+    return pd.concat(batch_list),df1,pattern,dayofweek
 
 def get_all_batch(df,t_seq,k):
     x_list = []
     y_list = []
     for t in t_seq:
-        batch_x,batch_y,pattern = next_batch(df,t,k)
+        batch_x,batch_y,pattern,dayofweek = next_batch(df,t,k)
         batch_x = batch_x['volume'].tolist()
 #        batch_x.append(pattern)
+        batch_x.append(dayofweek)
+        
         batch_y = batch_y['volume'].tolist()
 #        batch_y.append(pattern)
         
         x_list.append(batch_x)
         y_list.append(batch_y)
 #    print(x_list)
-#    print(y_list)
+#    print('y_list',y_list)
     return x_list,y_list
 
 
@@ -142,11 +148,13 @@ def plot_tollgate_volume(df,t_seq,k=1):
     plt.plot(df[df['direction']==1].ix[t_seq]['volume'])
     plt.show()
     
-class model1():
+class model1:
     '''
     data producer
     '''
-    
+    def __init__(self):
+        self.name = 'modelT'
+        
     def load_volume_hour(self,fdir='volume(table 6)_training.csv'):
         '''
         20170518
@@ -187,8 +195,7 @@ def main():
     t_seq = pd.date_range(start='09/19/2016',periods=20,freq='T')
     print(len(t_seq))
     x_list,y_list = get_all_batch(df,t_seq,k=1)
-    print(x_list)
-    print(y_list)
-    
+    print(np.array(x_list).shape)
+    print(np.array(y_list).shape)
 if __name__ == '__main__':
     main()
