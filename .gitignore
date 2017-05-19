@@ -2,3 +2,14 @@ data/
 scripts.*
 __MACOSX/
 model/
+
+*.pdf
+
+.ipynb_checkpoints/
+
+__MACOSX/*
+
+scripts/.ipynb_checkpoints/
+scripts/__MACOSX/*
+
+
