@@ -244,7 +244,7 @@ def gen_df(freq='T',normalize = False,test = False,pat = True,periods=72):
     '''
     if freq is '20Min':
         df = load_volume(fdir='train_union.csv')
-        train_seq = produce_seq(start='10/8/2016 00:00',periods=periods,freq='20Min',days = 8)
+        train_seq = produce_seq(start='10/8/2016 00:00',periods=periods,freq='20Min',days = 1)
         if len(train_seq) != 72*20:
             print('train_seq len ',len(train_seq))
 #            sys.exit()
@@ -295,7 +295,7 @@ def next_seq(seq,offset="20Min"):
 def train(freq = '20Min',tollgate_id = 1):
     df,train_seq,test_seq = gen_df(freq,normalize = False,test=False)
     print(df.dtypes)
-    step = 72 #预测前进X步
+    step = len(train_seq) #预测前进X步
     batch_x = df[df['tollgate_id']==tollgate_id]
     batch_x = batch_x.set_index(['tollgate_id','direction','time_window_s'])
     df1 = df[df['tollgate_id']==tollgate_id].set_index('time_window_s')
@@ -312,11 +312,26 @@ def train(freq = '20Min',tollgate_id = 1):
 #        sys.exit()
         from time_series_analysis_p1 import main_1 as arima
         #output tollgate_id,direction time_window_s,pred,volume
-        output = arima(arima_x,tollgate_id,direction,train_seq,step)
+        outputlist = []
+        for day in range(8):
+            output = arima(arima_x,tollgate_id,direction,train_seq,step)
+            print('output time zone is ',output['time_window_s'])
+            train_seq += Day(1)
+            if len(output) == len(train_seq)*2:
+                print('train seq match output length')
+            else:
+                print(len(output))
+                sys.exit()
+                
+            outputlist.append(output)
 #        print(output)
         #add weather param
-        output = output.set_index(['tollgate_id','direction','time_window_s'])
+        output = pd.concat(outputlist)
+        print(len(output))
+        output = output.set_index(['time_window_s'])
         print(output.loc[:,'pred'])
+        print(len(output))
+#        sys.exit()
         batch_x.loc[:,'pred'] = output.loc[:,'pred']
     
     batch_x = batch_x[batch_x['pred'].notnull()]
@@ -325,7 +340,7 @@ def train(freq = '20Min',tollgate_id = 1):
     batch_x.loc[:,'pred'] = np.log(batch_x.loc[:,'pred'])
     batch_x.loc[:,'volume'] = np.log(batch_x.loc[:,'volume'])
     test_seq = batch_x.index
-    batch_x.to_csv(r'arima_bp_log.csv',index=True)
+    batch_x.to_csv(''.join([str(tollgate_id),r'arima_bp_log.csv']),index=True)
     #struct batch
     x_data = np.array(batch_x.reset_index()[['pressure','sea_pressure','wind_direction','wind_speed',
                                 'temperature','rel_humidity','precipitation',

@@ -444,7 +444,7 @@ def main_1(df,tollgate_id,direction,trainning_seq,step):
     
     #predict
     pqr = [10,1,8]
-    pqr = ARIMA_predictBynum(ts,pqr)
+#    pqr = ARIMA_predictBynum(ts,pqr)
     tollgate_d = ''.join([str(tollgate_id),'-',str(direction)])
     aicList.append([tollgate_d,pqr])
     
@@ -456,8 +456,10 @@ def main_1(df,tollgate_id,direction,trainning_seq,step):
     result = np.concatenate((pred,result[0]))
 #    print(result)
     pred_seq = pd.date_range(start = (trainning_seq[0]),periods = len(result), freq='20Min')
-    result = pd.Series(data=result[0],name='pred',index=pred_seq)
+    result = pd.Series(data=result,name='pred',index=pred_seq)
     result = np.exp(result)
+    ###去除不可能的点
+    
     true = df[pred_seq].fillna(0)
 #    print(result)
     print(len(result),len(ts))
