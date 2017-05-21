@@ -14,14 +14,29 @@ from pandas.tseries.offsets import *
 
 import matplotlib.pylab as plt
 import sys 
+from pandas.tseries.offsets import Hour
+
+def check_df(df):
+    return 0
+
 
 def load_volume(fdir='training_20min_avg_volume.csv'):
     df = pd.read_csv(fdir,date_parser=lambda x : pd.to_datetime(x,format=r'%Y/%m/%d %H:%M'),infer_datetime_format=True)
     df.loc[:,'time_window_s']=pd.to_datetime(df['time_window_s'],format=r'%Y/%m/%d %H:%M:%S')
     return df
+def load_test(fdir='test1_20min_avg_volume.csv'):
+    df = pd.read_csv(fdir,date_parser=lambda x : pd.to_datetime(x,format=r'%Y/%m/%d %H:%M'),infer_datetime_format=True)
+    df.loc[:,'time_window_s']=pd.to_datetime(df['time_window_s'],format=r'%Y/%m/%d %H:%M:%S')
+    df1 = df.copy()
+    df1.loc[:,'time_window_s'] = df1.loc[:,'time_window_s'] + Hour(2)
+    df = pd.concat([df,df1])
+#    print(df.set_index(['time_window_s','direction']).head(100))
+    df.to_csv(r'test_shift.csv')
+    return df
     
 def prep(df,pat = True,normalize=True,weekday=True):
     #add some patten here
+    df.loc[:,'pattern'] = 0
     if pat is True:
         different_volume = [0,1,2]
         
@@ -32,7 +47,7 @@ def prep(df,pat = True,normalize=True,weekday=True):
         df2 = df['10/1/2016':'10/7/2016']
         df2.loc[:,'pattern'] = 1
         df3 = df['10/8/2016':'10/17/2016']
-        df3.loc[:,'pattern'] = 2
+        df3.loc[:,'pattern'] = 0
         df = pd.concat([df1,df2,df3])
         df = df.reset_index()
     #Adaptive and Natural Computing Algorithms: 10th International Conference ..
@@ -48,13 +63,28 @@ def prep(df,pat = True,normalize=True,weekday=True):
         df.loc[:,'volume'] = df1.values
 #    print(df.dtypes)
     if weekday is True:
-        s = pd.Series(df['time_window_s'].dt.weekday,index=df.index,name='dayofweek')
+        s = pd.Series(df['time_window_s'].dt.weekday,index=df.index,name='dayofweek')/7
+        df = df.join(s)
+        s = pd.Series(df['time_window_s'].dt.hour,index=df.index,name='hour')/24
+        df = df.join(s)
+        s = pd.Series(df['time_window_s'].dt.minute,index=df.index,name='minute')/60
         df = df.join(s)
     print(df.head())
     return df
 
-def load_weather(fdir='weather (table 7)_training_update.csv'):
+def load_weather(fdir=r'E:\大数据实践\天池大赛KDD CUP\data\weather (table 7)_training_update.csv'):
     df = pd.read_csv(fdir,date_parser=[0],infer_datetime_format=True)
+    df.loc[:,'date']=pd.to_datetime(df['date'],format=r'%Y/%m/%d %H:%M:%S')    
+    t_seq = []
+    for i in range(len(df)):
+        t_seq.append(pd.to_datetime(df.loc[i,'date']) + Hour(df.loc[i,'hour']))
+    df.loc[:,'time_window_s'] = t_seq
+    df = df[['time_window_s','pressure','sea_pressure','wind_direction','wind_speed','temperature','rel_humidity','precipitation']]
+    df = df.set_index('time_window_s').resample('20Min').ffill()
+    
+    #normalize
+    df = df.apply(lambda x : x/x.mean())
+    return df.reset_index()
 
 def fun(df1):
     '''
@@ -118,16 +148,20 @@ def next_batch(df,t='2016/9/19 00:00',k=1):
     df1 = fun(df1)
     pattern = df1['pattern'].tolist()[0]
     dayofweek = df1['dayofweek'].tolist()[0]
-    return pd.concat(batch_list),df1,pattern,dayofweek
+    hour = df1['hour'].tolist()[0]
+    minute = df1['minute'].tolist()[0]
+    return pd.concat(batch_list),df1,pattern,dayofweek,hour,minute
 
 def get_all_batch(df,t_seq,k):
     x_list = []
     y_list = []
     for t in t_seq:
-        batch_x,batch_y,pattern,dayofweek = next_batch(df,t,k)
+        batch_x,batch_y,pattern,dayofweek,hour,minute = next_batch(df,t,k)
         batch_x = batch_x['volume'].tolist()
 #        batch_x.append(pattern)
         batch_x.append(dayofweek)
+        batch_x.append(hour)
+        batch_x.append(minute)
         
         batch_y = batch_y['volume'].tolist()
 #        batch_y.append(pattern)
@@ -173,17 +207,54 @@ class model1:
     #    print(df.head(100))
         return df.reset_index()
     
+    def load_volume_20Min(self,fdir='volume(table 6)_training.csv'):
+        '''
+        20170521
+        new model for this task
+        imput history record for vehicle
+        output tollgate_id,direction,time_window_s,volume
+        '''
+        df = pd.read_csv(fdir,infer_datetime_format=True)
+        df.loc[:,'time_window_s']=pd.to_datetime(df['time'],format=r'%Y/%m/%d %H:%M:%S')
+    #    print(df.head())
+        df.loc[:,'volume'] = 1
+        aggregate = lambda x : x.set_index('time_window_s').resample('20Min').agg(sum).fillna(0.0001)# avoid nan and inf
+        df = df.groupby(['tollgate_id','direction'])[['time_window_s','volume']].apply(aggregate)
+    #    print(df.head(100))
+        return df.reset_index()
     
+    def train_union(self):
+        in_file=r'E:\大数据实践\天池大赛KDD CUP\data\dataSets\training\volume(table 6)_training.csv'
+        src = self.load_volume_20Min(in_file)
+        df = load_weather()
+        src = src.set_index('time_window_s')
+        df = df.set_index('time_window_s')
+        df = src.join(df,how='left')
+        print(len(src),len(df))
+        print(df)
+        df.to_csv(r'train_union.csv')
+        
+        
+    def test_union(self):
+        in_file=r'E:\大数据实践\天池大赛KDD CUP\data\dataSets\training\volume(table 6)_training.csv'
+        src = self.load_volume_20Min(in_file)
+        df = load_weather(fdir=r'E:\大数据实践\天池大赛KDD CUP\data\dataSets\testing_phase1\weather (table 7)_test1.csv')
+        src = src.set_index('time_window_s')
+        df = df.set_index('time_window_s')
+        df = src.join(df,how='left')
+        print(len(src),len(df))
+        print(df)
+        df.to_csv(r'test_union.csv')
 
 def main():
 
     in_file = 'training_20min_avg_volume.csv'
-    df = load_volume(in_file)
-#    df = prep(df)
-    t_seq = pd.date_range(start='09/19/2016 06:00',end='9/19/2016 10:00',freq='20Min')
-    t_seq1 = pd.date_range(start='10/1/2016',end='10/7/2016',freq='20Min')
-    t_seq2 = pd.date_range(start='10/8/2016',end='10/17/2016',freq='20Min')
-    plot_tollgate_volume(df,t_seq,k=1)
+    src = load_volume(in_file)
+##    df = prep(df)
+#    t_seq = pd.date_range(start='09/19/2016 06:00',end='9/19/2016 10:00',freq='20Min')
+#    t_seq1 = pd.date_range(start='10/1/2016',end='10/7/2016',freq='20Min')
+#    t_seq2 = pd.date_range(start='10/8/2016',end='10/17/2016',freq='20Min')
+#    plot_tollgate_volume(df,t_seq,k=1)
 #    plot_tollgate_volume(df,t_seq1,k=1)
 #    plot_tollgate_volume(df,t_seq2,k=1)
 #    get_all_batch(df,t_seq,k=1)
@@ -199,5 +270,11 @@ def main():
 #    x_list,y_list = get_all_batch(df,t_seq,k=1)
 #    print(np.array(x_list).shape)
 #    print(np.array(y_list).shape)
+
+    model = model1()
+    model.train_union()
+    model.test_union()
+
+    
 if __name__ == '__main__':
     main()

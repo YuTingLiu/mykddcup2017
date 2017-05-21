@@ -3,13 +3,18 @@ scripts.*
 __MACOSX/
 model/
 
-*.pdf
+/*.pdf
 
-.ipynb_checkpoints/
+/.ipynb_checkpoints/
 
-__MACOSX/*
+/__MACOSX/*
 
 scripts/.ipynb_checkpoints/
 scripts/__MACOSX/*
 
 
+/scripts/.ipynb_checkpoints
+/scripts/__pycache__
+/scripts/*.DS_Store
+/scripts/*.csv
+/*.csv

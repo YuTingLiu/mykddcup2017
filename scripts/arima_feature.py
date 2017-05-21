@@ -33,6 +33,7 @@ class bp_net:
         self.middle = 30
         self.training_iters = 1000
         self.modeldir = os.path.join('../model/')
+        self.modelname = 'arima'
         
     def build(self,D,K):
         with self.graph.as_default():
@@ -116,11 +117,12 @@ class bp_net:
                     "{:.6f}".format(cost) + ", Training Accuracy= " + "{:.5f}".format(acc))
                 step += 1
             # 如果准确率大于50%,保存模型,完成训练
-            self.saver.save(self.session,save_path=os.path.join(self.modeldir,'bp.model'), global_step=step)
+            self.saver.save(self.session,save_path=os.path.join(self.modeldir,self.modelname), global_step=step)
             #test
             pred = self.session.run(a_2 , feed_dict={self.x:Xtest})
             print(pred)
             print(Ytest)
+            print('mse is ',np.mean((pred-Ytest)**2))
 
 
     def predict(self,_X):
@@ -236,27 +238,23 @@ class bp_net:
         return 1-error_rate(self.predict(_X),_Y)
 ################################################################################    
     
-def gen_df(freq='T',normalize = False,test = True):
+def gen_df(freq='T',normalize = False,test = False,pat = True,periods=72):
     '''
     help fun
     '''
     if freq is '20Min':
-        df = load_volume(fdir='training_20min_avg_volume.csv')
-        train_seq = produce_seq(start='10/8/2016 05:40',periods=12,freq='20Min',days = 10)
+        df = load_volume(fdir='train_union.csv')
+        train_seq = produce_seq(start='10/8/2016 00:00',periods=periods,freq='20Min',days = 8)
+        if len(train_seq) != 72*20:
+            print('train_seq len ',len(train_seq))
+#            sys.exit()
         if test is True:
-            df = load_test(fdir='test1_20min_avg_volume.csv')
+            df = load_test(fdir='test_union.csv')
             test_seq = produce_seq(start='10/18/2016 07:20',periods=1,freq='20Min',days = 1)
-            df = prep(df,pat=False,normalize=normalize)
+            df = prep(df,pat=pat,normalize=normalize)
         else:
-            test_seq = produce_seq(start='10/8/2016 05:40',periods=6,freq='20Min',days = 1)
-            df = prep(df,pat=True,normalize=normalize)
-    elif freq is 'T':
-        in_file=r'E:\大数据实践\天池大赛KDD CUP\data\dataSets\training\volume(table 6)_training.csv'
-        model = model1()
-        df = model.load_volume_hour(fdir=in_file)
-        train_seq = produce_seq(start='09/19/2016 00:20',periods=20,freq='T',days = 7)
-        test_seq = produce_seq(start='09/26/2016 00:20',periods=20,freq='T',days = 1)
-        df = prep(df,pat=True,normalize=normalize)
+            test_seq = produce_seq(start='10/16/2016 06:00',periods=periods,freq='20Min',days = 1)
+            df = prep(df,pat=pat,normalize=normalize)
     else:
         sys.exit(0)
     return df,train_seq,test_seq
@@ -285,15 +283,8 @@ def plot_pred(pred,y_true):
     datashape : [[1,2],[1,2]]
     
     '''    
-    pred = np.exp(pred)
-    y_true = np.exp(y_true)
-    print(pred.shape)
-    print(pred[:,0])
-    print(pred[:,0].flatten().shape)
     plt.plot(pred[:,0].flatten(),'blue')
-    plt.plot(pred[:,1].flatten(),'red')
     plt.plot(y_true[:,0].flatten(),'*')
-    plt.plot(y_true[:,1].flatten(),'+')
     plt.show()
     
 
@@ -302,30 +293,62 @@ def next_seq(seq,offset="20Min"):
     
 ###############################################################################
 def train(freq = '20Min',tollgate_id = 1):
-    df,train_seq,test_seq = gen_df(freq,normalize = True,test=False)
+    df,train_seq,test_seq = gen_df(freq,normalize = False,test=False)
+    print(df.dtypes)
+    step = 72 #预测前进X步
+    batch_x = df[df['tollgate_id']==tollgate_id]
+    batch_x = batch_x.set_index(['tollgate_id','direction','time_window_s'])
+    df1 = df[df['tollgate_id']==tollgate_id].set_index('time_window_s')
+    df1 = df1.groupby('direction')
+    batch = []
+    for direction,group in df1:
+        arima_x = group['volume']
+        if len(arima_x[arima_x.isnull()])>0 or len(arima_x[arima_x == np.nan])>0 or len(arima_x[arima_x == np.inf]):
+            print(arima_x[arima_x.isnull()])
+            print(arima_x[arima == np.nan])
+            print(arima_x[arima == np.inf])
+            sys.exit()
+#        print(arima_x)
+#        sys.exit()
+        from time_series_analysis_p1 import main_1 as arima
+        #output tollgate_id,direction time_window_s,pred,volume
+        output = arima(arima_x,tollgate_id,direction,train_seq,step)
+#        print(output)
+        #add weather param
+        output = output.set_index(['tollgate_id','direction','time_window_s'])
+        print(output.loc[:,'pred'])
+        batch_x.loc[:,'pred'] = output.loc[:,'pred']
     
-    batch_x,batch_y = get_all_batch(df,train_seq,k=tollgate_id)
-    x_data = np.array(batch_x)
+    batch_x = batch_x[batch_x['pred'].notnull()]
+#    print(batch_x)
+    #normalize
+    batch_x.loc[:,'pred'] = np.log(batch_x.loc[:,'pred'])
+    batch_x.loc[:,'volume'] = np.log(batch_x.loc[:,'volume'])
+    test_seq = batch_x.index
+    batch_x.to_csv(r'arima_bp_log.csv',index=True)
+    #struct batch
+    x_data = np.array(batch_x.reset_index()[['pressure','sea_pressure','wind_direction','wind_speed',
+                                'temperature','rel_humidity','precipitation',
+                                'dayofweek','hour','minute','direction','pattern','pred']])
     if np.any(np.isnan(x_data)):
         print('nan found ')
         sys.exit(0)
-    y_data = np.array(batch_y)
-    
-    test_x,test_y = get_all_batch(df,test_seq,k=1)
-    test_x = np.array(test_x)
-    test_y = np.array(test_y)    
+    y_data = np.array(batch_x.loc[:,'volume'])
+    y_data = y_data.reshape((len(y_data),1))
+#    print(x_data)
+#    print(y_data)
     
     #begin bp train
     bp = bp_net()
     N,D = x_data.shape
     K = len(y_data[0])
-    bp.middle = 100
-    bp.training_iters = 15000
+    bp.middle = 150
+    bp.modelname = str(tollgate_id)
+    bp.training_iters = 25000
     bp.build(D,K)
-    bp.fit(x_data,y_data,test_x,test_y)
-    print(train_seq)
+    bp.fit(x_data,y_data,x_data,y_data)
+#    print(train_seq)
     print('train',x_data.shape,y_data.shape)
-    print('test',test_x.shape,test_y.shape)
     print('train seq ',train_seq[0],train_seq[-1])
     print('test seq',test_seq[0],test_seq[-1])
     
@@ -337,55 +360,66 @@ def test(freq = '20Min',tollgate_id = 1):
     output result
     '''
     result = []
-    df,train_seq,test_seq = gen_df(freq,normalize=True,test=True)
-    true = df[df['tollgate_id']==tollgate_id][['time_window_s','direction','volume']].set_index(['time_window_s','direction'])
-    true = np.exp(true)
+    df,train_seq,test_seq = gen_df(freq,normalize=False,test=False,pat=True,periods=72)
+    true = df[df['tollgate_id']==tollgate_id].set_index(['tollgate_id','direction','time_window_s'])
+    
+    #add ARIMA process
+    train_seq = pd.date_range(start = (test_seq[0]-Day(1)),periods=len(test_seq),freq='20Min')
+    for direction,group in df[df['tollgate_id']==tollgate_id].groupby('direction'):
+        arima_x = group.set_index(['time_window_s'])['volume'][train_seq]
+        print('arima_x couting number of zero', len(arima_x[arima_x==0]))
+        from time_series_analysis_p1 import main_1 as arima
+        #output tollgate_id,direction time_window_s,pred,volume
+        output = arima(arima_x,tollgate_id,direction,train_seq,len(test_seq))
+        output = output.set_index(['tollgate_id','direction','time_window_s'])
+        output.to_csv(''.join([str(direction),'arima_tmp.csv']))
+        true.loc[:,'pred'] = output.loc[:,'volume']
+    true = true.reset_index().set_index('time_window_s')
+    #start test for this model
+    true = true.loc[test_seq,:].dropna()
+    
+    true.loc[:,'volume'] = np.log(true.loc[:,'volume'])
+    true.loc[:,'pred'] = np.log(true.loc[:,'pred'])
+#    true.loc[:,'pred'] = np.log(true.loc[:,'volume'])-np.log(true.loc[:,'volume']).shift(1)
+    print(true[['volume','pred']])
+    true = true.dropna()
+    test_seq = true.index
+    sys.exit()
+    
     #模型训练了一天的这个时间段，看看能够预测多少天的数据
-    for i in range(7):
+    for i in range(1):
         if i>0:
             test_seq = test_seq + DateOffset(days=1)
-        for j in range(2):
-            print(test_seq[0],test_seq[0].dayofweek)
-            batch_x,batch_y = get_all_batch(df,test_seq,k=tollgate_id)
-            batch_x = np.array(batch_x)
-            batch_y = np.array(batch_y)
-            print(batch_x)
-            print(batch_y)
-            #begin test this model
-            model = bp_net()
-            pred = model.predict(batch_x)
-            print(np.sum(pred,axis=0))
-            print(np.sum(batch_y,axis=0))
-            
-            def pred2csv(test_seq,pred,batch_y):
-                #output result to a csv file 
-                if len(test_seq) == pred.shape[0] and len(test_seq) == batch_y.shape[0]:
-                    pred = pd.DataFrame(pred,index = test_seq).stack().reset_index()
-                    pred.columns = ['time_window_s','direction','pred']
-                    pred = pred.set_index(['time_window_s','direction'])
-                    pred = np.exp(pred)
-                    re = pred.join(true,how='left')
-                    re.loc[:,'tollgate_id'] = tollgate_id
-                    result.append(re)
-                    return re
-                else:
-                    print('length not match')
-                    return None
-            #预测结束后，时间轴
-            test_seq = test_seq + Minute(20)
-            re = pred2csv(test_seq,pred,batch_y).loc[:,'pred']
-            re = np.log(re)
-            #放入新的训练
-            df = df[df['tollgate_id']==tollgate_id].set_index(['time_window_s','direction'])
-#            print(re)
-            print(df)
-            df.loc[(test_seq,slice(None)),'volume'] = re
-            df = df.reset_index()
-#            print(df.loc[(test_seq,slice(None)),'volume'])
-#            sys.exit(0)        
+        #struct batch
+        print(true)
+#        sys.exit(0)
+        x_data = np.array(true[['pressure','sea_pressure','wind_direction','wind_speed',
+                                    'temperature','rel_humidity','precipitation',
+                                    'dayofweek','hour','minute','direction','pattern','pred']])
+        if np.any(np.isnan(x_data)):
+            print('nan found ')
+            sys.exit(0)
+        y_data = np.array(true.loc[:,'volume'])
+        y_data = y_data.reshape((len(y_data),1))
+        print(x_data)
+        print('test seq is',test_seq[0],test_seq[-1],test_seq[0].dayofweek)
         
-            #plot pred and true data
-            plot_pred(pred,batch_y)
+        #begin test this model
+        model = bp_net()
+        pred = model.predict(x_data)
+        print(np.sum(pred,axis=0))
+        print(np.sum(y_data,axis=0))
+        print(len(test_seq),pred.shape,y_data.shape)
+        
+        #plot pred and true data
+        plot_pred(pred,y_data)
+        print('mse is ',np.mean((pred-y_data)**2))
+        temp = np.concatenate((y_data,pred),axis = 1)
+        print(temp)
+        print(temp.shape)
+        
+        temp = pd.DataFrame(temp,columns=['volume','pred'],index=test_seq)
+        result.append(temp)
 
     df = pd.concat(result)
     df.to_csv('model_pre.csv')
@@ -439,8 +473,8 @@ def next_test(freq = '20Min'):
 if __name__ == '__main__':
 #    train(freq='T')
 #    test(freq='T')
-#    train(freq='20Min')
-    test(freq='20Min')
+    train(freq='20Min',tollgate_id=1)
+#    test(freq='20Min')
 #    next_train(freq='T')
 #    next_test(freq='T')
 

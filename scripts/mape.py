@@ -25,6 +25,13 @@ def mape(df):
 
 
 def main():
-    df = load_volume()
-    result = mape(df)
-    print(result)    
+    df = load_volume(fdir='arima_result.csv')
+    df = df.set_index(['tollgate_id','direction','time_window_s'])
+    df.loc[:,'mape'] = np.abs((df['volume']-df['pred'])/df['volume'])
+    print(df[df['mape']>0.5].reset_index()[['time_window_s','direction','volume','pred']])
+    result = df['mape'].sum()/len(df.index)
+    print('MAPE for this model is ',result)    
+
+
+if  __name__ == '__main__':
+    main()
