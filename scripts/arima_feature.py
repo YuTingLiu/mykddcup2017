@@ -310,6 +310,11 @@ def pre_train(freq = '20Min')
     cache(GLOBAL)
 		
 def train(freq = '20Min',tollgate_id = 1):
+    '''
+    主要的内容是:数据按照时间分割,送入ARIMA训练,得到结果1
+	      整合结果1,送入BPNN训练,得到训练好的网络
+         输出:每个tollgate一个模型
+    '''
     df,train_seq,test_seq = gen_df(freq,normalize = False,test=False)
     print(df.dtypes)
     step = len(train_seq) #预测前进X步,使得预测长度与输入长度相等
@@ -361,10 +366,12 @@ def train(freq = '20Min',tollgate_id = 1):
     batch_x = batch_x[batch_x['pred'].notnull()]
 #    print(batch_x)
     #normalize
+    batch_x.loc[:,'residual'] = batch_x.loc[:,'volume'] - batch_x.loc[:,'pred']#添加残差
     batch_x.loc[:,'pred'] = np.log(batch_x.loc[:,'pred'])
     batch_x.loc[:,'volume'] = np.log(batch_x.loc[:,'volume'])
+
     test_seq = batch_x.index
-    batch_x.to_csv(''.join([str(tollgate_id),r'arima_bp_log.csv']),index=True)
+    batch_x.to_csv(''.join([str(tollgate_id),r'_arima_bp_log.csv']),index=True)
     #struct batch
     x_data = np.array(batch_x.reset_index()[['pressure','sea_pressure','wind_direction','wind_speed',
                                 'temperature','rel_humidity','precipitation',
@@ -372,7 +379,7 @@ def train(freq = '20Min',tollgate_id = 1):
     if np.any(np.isnan(x_data)):
         print('nan found ')
         sys.exit(0)
-    y_data = np.array(batch_x.loc[:,'volume'])
+    y_data = np.array(batch_x.loc[:,'residual'])#修改为残差
     y_data = y_data.reshape((len(y_data),1))
 #    print(x_data)
 #    print(y_data)
@@ -417,17 +424,13 @@ def test(freq = '20Min',tollgate_id = 1):
         output = arima(arima_x,tollgate_id,direction,train_seq,len(test_seq),pqr)
         output = output.set_index(['tollgate_id','direction','time_window_s'])
 	al_dir.append(output)
-        output.to_csv(''.join([str(tollgate_id),'-',str(direction),'arima_tmp.csv']))
 
     true = pd.concat(al_dir)
+    true.to_csv(''.join([str(tollgate_id),'-','arima_tmp.csv']))
     
+    true.loc[:,'residual'] = true.loc[:,'volume'] - true.loc[:,'pred']#添加残差
     true.loc[:,'volume'] = np.log(true.loc[:,'volume'])
     true.loc[:,'pred'] = np.log(true.loc[:,'pred'])
-#    true.loc[:,'pred'] = np.log(true.loc[:,'volume'])-np.log(true.loc[:,'volume']).shift(1)
-    print(true[['volume','pred']])
-    true = true.dropna()
-    test_seq = true.index
-    sys.exit()
     
     #模型训练了一天的这个时间段，看看能够预测多少天的数据
     for i in range(1):
@@ -442,7 +445,7 @@ def test(freq = '20Min',tollgate_id = 1):
         if np.any(np.isnan(x_data)):
             print('nan found ')
             sys.exit(0)
-        y_data = np.array(true.loc[:,'volume'])
+        y_data = np.array(true.loc[:,'residual'])
         y_data = y_data.reshape((len(y_data),1))
         print(x_data)
         print('test seq is',test_seq[0],test_seq[-1],test_seq[0].dayofweek)
@@ -465,7 +468,7 @@ def test(freq = '20Min',tollgate_id = 1):
         result.append(temp)
 
     df = pd.concat(result)
-    df.to_csv('model_pre.csv')
+    df.to_csv(''.join([str(tollgate_id),'model_pre.csv'])
     
 def next_train(freq = 'T'):
     df,train_seq,test_seq = gen_df(freq)
@@ -525,12 +528,9 @@ def cache(config,fdir='global_config.txt'):
 GLOBAL = {}
 if __name__ == '__main__':
     GLOBAL = cache(GLOBAL)
-#    train(freq='T')
-#    test(freq='T')
+
     train(freq='20Min',tollgate_id=1)
-#    test(freq='20Min')
-#    next_train(freq='T')
-#    next_test(freq='T')
+#    test(freq='20Min',tollgate_id=1)
 
 
 
