@@ -313,7 +313,7 @@ def fing_best_pqd(df_log,pqr):
                     results_ARMA=ARMA(df_log_diff,(p,q)).fit(disp=-1,method='css')
                     x=results_ARMA.aic
                     x1= p,d,q
-                    print (x1,x)
+#                    print (x1,x)
                     if isnan(x):
     ##                        print('find nan ',x1,x)
                         continue
@@ -321,7 +321,7 @@ def fing_best_pqd(df_log,pqr):
                     pdq.append(x1)
                 except Exception as e:
     ##                    print('ERROR FIND ',x1,x)
-                    print(e)
+#                    print(e)
                     pass
     keys = pdq
     values = aic
@@ -445,6 +445,9 @@ def main_1(df,tollgate_id,direction,trainning_seq,step,pqr):
     
     #按照步数来预测，结果叠加到已知序列
     pred,result = predict(ts,step,pqr[0],pqr[1],pqr[2])
+    if dw_test[0]<1 or dw_test[0]>3:
+        pqr = ARIMA_predictBynum(ts,pqr)
+        print(pqr)
 #    if len(pred)<len(train_seq):
 #	pred = pred.fillna(pred.mean())
 #    print(len(pred),len(result[0]))
