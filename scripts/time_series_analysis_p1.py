@@ -455,8 +455,8 @@ def main_1(df,tollgate_id,direction,trainning_seq,step,pqr):
     result = result[0]
     print('强制对齐预测数据时间')
     if len(result) != len(trainning_seq):
-	print('Length of ARIMA output is ',len(result))
-	sys.exit(0)
+        print('Length of ARIMA output is ',len(result))
+        sys.exit(0)
     pred_seq = pd.date_range(start = (trainning_seq[-1]+Minute(20)),periods = len(result), freq='20Min')
     result = pd.Series(data=result,name='pred',index=pred_seq)
     result = np.exp(result)

@@ -13,7 +13,7 @@ import pandas as pd
 from data_util import *
 import sys
 import os
-
+import json
 #时间平移
 from pandas.tseries.offsets import DateOffset
 from pandas.tseries.offsets import Week
@@ -292,21 +292,21 @@ def next_seq(seq,offset="20Min"):
     return seq  + Minute(offset)
     
 ###############################################################################
-def pre_train(freq = '20Min')
+def pre_train(freq = '20Min'):
     df,train_seq,test_seq = gen_df(freq,normalize = False,test=False)
     tolls = df.groupby('tollgate_id')
     for t,tgroup in tolls:
-	ds = tgroup.groupby('direction')
-	for d,dgroup in ds:
-	    dgroup.loc[:,'day'] = dgroup['time_window_s'].dt.dayofyear
-	    days = dgroup.groupby('day')
-	    for day,group in days:
-		group = group.set_index('time_window_s')['volume']
-		param = ''.join([str(t),'-',str(d),'-',str(day)])
-		print('pre train param for ',param)
-        	from time_series_analysis_p1 import ARIMA_predictBynum
-		pqr = ARIMA_predictBynum(group,[0,1,0])
-		GLOBAL[param] = pqr
+        ds = tgroup.groupby('direction')
+        for d,dgroup in ds:
+            dgroup.loc[:,'day'] = dgroup['time_window_s'].dt.dayofyear
+            days = dgroup.groupby('day')
+            for day,group in days:
+                group = group.set_index('time_window_s')['volume']
+                param = ''.join([str(t),'-',str(d),'-',str(day)])
+                print('pre train param for ',param)
+                from time_series_analysis_p1 import ARIMA_predictBynum
+                pqr = ARIMA_predictBynum(group,[0,1,0])
+                GLOBAL[param] = pqr
     cache(GLOBAL)
 		
 def train(freq = '20Min',tollgate_id = 1):
@@ -327,26 +327,26 @@ def train(freq = '20Min',tollgate_id = 1):
             sys.exit()
 #        print(arima_x)
 #        sys.exit()
-	print('ARIMA模型,训练8天的数据,默认时间序列周期为一天,通过每天建立模型,得到下一天的输出,最终形成8天8*72个预测值,放到BP中训练')
+        print('ARIMA模型,训练8天的数据,默认时间序列周期为一天,通过每天建立模型,得到下一天的输出,最终形成8天8*72个预测值,放到BP中训练')
         from time_series_analysis_p1 import main_1 as arima
         #output: tollgate_id,direction time_window_s,pred,volume
         outputlist = []
         for day in range(8):
-	    #p,q load
+    	      #p,q load
             param_name = ''.join([str(tollgate_id),'-',str(direction),'-',train_seq[0].dayofyear])
-	    pqr = GLOBAL[param_name]
+            pqr = GLOBAL[param_name]
             output = arima(arima_x,tollgate_id,direction,train_seq,step,pqr)
             print('output time zone is ',output['time_window_s'])
             print('输出长度应该与预期长度不一致,是否缺少一位 (0:一致,-1:少一位):' ,(len(output)-len(train_seq)*2))
             train_seq += Day(1)
-	    step = len(train_seq)
+            step = len(train_seq)
             if len(output) == len(train_seq)*2:
                 print('train seq match output length')
             else:
                 print(len(output))
-		print(output)
-                sys.exit()
-                
+                print(output)
+                sys.exit()  
+                    
             outputlist.append(output)
 #        print(output)
         #add weather param
@@ -412,11 +412,11 @@ def test(freq = '20Min',tollgate_id = 1):
         print('arima_x couting number of zero', len(arima_x[arima_x==0]))
         from time_series_analysis_p1 import main_1 as arima
         #output tollgate_id,direction time_window_s,pred,volume
-	param_name = ''.join([str(tollgate_id),'-',str(direction),'-',train_seq[0].dayofyear])
-	pqr = GLOBAL[param_name]
+        param_name = ''.join([str(tollgate_id),'-',str(direction),'-',train_seq[0].dayofyear])
+        pqr = GLOBAL[param_name]
         output = arima(arima_x,tollgate_id,direction,train_seq,len(test_seq),pqr)
         output = output.set_index(['tollgate_id','direction','time_window_s'])
-	al_dir.append(output)
+        al_dir.append(output)
         output.to_csv(''.join([str(tollgate_id),'-',str(direction),'arima_tmp.csv']))
 
     true = pd.concat(al_dir)
@@ -514,21 +514,24 @@ def next_test(freq = '20Min'):
         
 def cache(config,fdir='global_config.txt'):
     if os.path.isfile(fdir):
-        f = file(fdir,'r')
-	config = json.load(f)
-    	f.close()
+        f = open(fdir,'r')
+        config = json.load(f)
+        f.close()
+        return config
     else:
-	f = file(fdir,'w')
-	json.dump(config,f)
-    	f.close()
+        f = open(fdir,'w')
+        json.dump(config,f) 
+        f.close()
 
 GLOBAL = {}
 if __name__ == '__main__':
+#    pre_train()
     GLOBAL = cache(GLOBAL)
+#    print(GLOBAL)
 #    train(freq='T')
 #    test(freq='T')
     train(freq='20Min',tollgate_id=1)
-#    test(freq='20Min')
+    test(freq='20Min')
 #    next_train(freq='T')
 #    next_test(freq='T')
 
