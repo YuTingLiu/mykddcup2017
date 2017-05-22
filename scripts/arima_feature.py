@@ -292,10 +292,27 @@ def next_seq(seq,offset="20Min"):
     return seq  + Minute(offset)
     
 ###############################################################################
+def pre_train(freq = '20Min')
+    df,train_seq,test_seq = gen_df(freq,normalize = False,test=False)
+    tolls = df.groupby('tollgate_id')
+    for t,tgroup in tolls:
+	ds = tgroup.groupby('direction')
+	for d,dgroup in ds:
+	    dgroup.loc[:,'day'] = dgroup['time_window_s'].dt.dayofyear
+	    days = dgroup.groupby('day')
+	    for day,group in days:
+		group = group.set_index('time_window_s')['volume']
+		param = ''.join([str(t),'-',str(d),'-',str(day)])
+		print('pre train param for ',param)
+        	from time_series_analysis_p1 import ARIMA_predictBynum
+		pqr = ARIMA_predictBynum(group,[0,1,0])
+		GLOBAL[param] = pqr
+    cache(GLOBAL)
+		
 def train(freq = '20Min',tollgate_id = 1):
     df,train_seq,test_seq = gen_df(freq,normalize = False,test=False)
     print(df.dtypes)
-    step = len(train_seq) #预测前进X步
+    step = len(train_seq) #预测前进X步,使得预测长度与输入长度相等
     batch_x = df[df['tollgate_id']==tollgate_id]
     batch_x = batch_x.set_index(['tollgate_id','direction','time_window_s'])
     df1 = df[df['tollgate_id']==tollgate_id].set_index('time_window_s')
@@ -310,17 +327,24 @@ def train(freq = '20Min',tollgate_id = 1):
             sys.exit()
 #        print(arima_x)
 #        sys.exit()
+	print('ARIMA模型,训练8天的数据,默认时间序列周期为一天,通过每天建立模型,得到下一天的输出,最终形成8天8*72个预测值,放到BP中训练')
         from time_series_analysis_p1 import main_1 as arima
-        #output tollgate_id,direction time_window_s,pred,volume
+        #output: tollgate_id,direction time_window_s,pred,volume
         outputlist = []
         for day in range(8):
-            output = arima(arima_x,tollgate_id,direction,train_seq,step)
+	    #p,q load
+            param_name = ''.join([str(tollgate_id),'-',str(direction),'-',train_seq[0].dayofyear])
+	    pqr = GLOBAL[param_name]
+            output = arima(arima_x,tollgate_id,direction,train_seq,step,pqr)
             print('output time zone is ',output['time_window_s'])
+            print('输出长度应该与预期长度不一致,是否缺少一位 (0:一致,-1:少一位):' ,(len(output)-len(train_seq)*2))
             train_seq += Day(1)
+	    step = len(train_seq)
             if len(output) == len(train_seq)*2:
                 print('train seq match output length')
             else:
                 print(len(output))
+		print(output)
                 sys.exit()
                 
             outputlist.append(output)
@@ -328,7 +352,7 @@ def train(freq = '20Min',tollgate_id = 1):
         #add weather param
         output = pd.concat(outputlist)
         print(len(output))
-        output = output.set_index(['time_window_s'])
+        output = output.set_index(['tollgate_id','direction','time_window_s'])
         print(output.loc[:,'pred'])
         print(len(output))
 #        sys.exit()
@@ -375,23 +399,27 @@ def test(freq = '20Min',tollgate_id = 1):
     output result
     '''
     result = []
-    df,train_seq,test_seq = gen_df(freq,normalize=False,test=False,pat=True,periods=72)
+    periods = 72
+    df,train_seq,test_seq = gen_df(freq,normalize=False,test=False,pat=True,periods=periods)
     true = df[df['tollgate_id']==tollgate_id].set_index(['tollgate_id','direction','time_window_s'])
     
     #add ARIMA process
-    train_seq = pd.date_range(start = (test_seq[0]-Day(1)),periods=len(test_seq),freq='20Min')
+    print('训练时间段向前推')
+    train_seq = pd.date_range(start = (test_seq[0]-Minute(20*periods)),periods=len(test_seq),freq='20Min')
+    al_dir = []
     for direction,group in df[df['tollgate_id']==tollgate_id].groupby('direction'):
         arima_x = group.set_index(['time_window_s'])['volume'][train_seq]
         print('arima_x couting number of zero', len(arima_x[arima_x==0]))
         from time_series_analysis_p1 import main_1 as arima
         #output tollgate_id,direction time_window_s,pred,volume
-        output = arima(arima_x,tollgate_id,direction,train_seq,len(test_seq))
+	param_name = ''.join([str(tollgate_id),'-',str(direction),'-',train_seq[0].dayofyear])
+	pqr = GLOBAL[param_name]
+        output = arima(arima_x,tollgate_id,direction,train_seq,len(test_seq),pqr)
         output = output.set_index(['tollgate_id','direction','time_window_s'])
-        output.to_csv(''.join([str(direction),'arima_tmp.csv']))
-        true.loc[:,'pred'] = output.loc[:,'volume']
-    true = true.reset_index().set_index('time_window_s')
-    #start test for this model
-    true = true.loc[test_seq,:].dropna()
+	al_dir.append(output)
+        output.to_csv(''.join([str(tollgate_id),'-',str(direction),'arima_tmp.csv']))
+
+    true = pd.concat(al_dir)
     
     true.loc[:,'volume'] = np.log(true.loc[:,'volume'])
     true.loc[:,'pred'] = np.log(true.loc[:,'pred'])
@@ -484,8 +512,19 @@ def next_test(freq = '20Min'):
         
         
         
-        
+def cache(config,fdir='global_config.txt'):
+    if os.path.isfile(fdir):
+        f = file(fdir,'r')
+	config = json.load(f)
+    	f.close()
+    else:
+	f = file(fdir,'w')
+	json.dump(config,f)
+    	f.close()
+
+GLOBAL = {}
 if __name__ == '__main__':
+    GLOBAL = cache(GLOBAL)
 #    train(freq='T')
 #    test(freq='T')
     train(freq='20Min',tollgate_id=1)

@@ -358,12 +358,10 @@ def ARIMA_predictBynum(df,pqr):
     return minaic
 
 
-def predict(df,pred_seq,p,d,q):
+def predict(df,step,p,d,q):
     '''
     输入：log后的数据，注意不需要差分
     '''
-    
-    step = len(pred_seq)
     df_log = df_log_func(df)
 #    df_log_diff = df_log_diff_func(df_log,d).dropna(inplace=True)#选择X阶差分
 #    nan = pd.isnull(df_log_diff)
@@ -419,23 +417,20 @@ def predict(df,pred_seq,p,d,q):
 #    print(results_ARIMA.params)
 #    print(type(results_ARIMA))
 #    print(dir(results_ARIMA))
-    start = (pred_seq[0] + Minute(20)).strftime("%Y-%m-%d %H:%M:%S")
-    end = (pred_seq[-1]).strftime("%Y-%m-%d %H:%M:%S")
-    print('predict time zone is ',start, end)
     pred = results_ARIMA.predict(end = len(df))
     result = results_ARIMA.forecast(step)
     return pred,result
 
 
-def main_1(df,tollgate_id,direction,trainning_seq,step):
+def main_1(df,tollgate_id,direction,trainning_seq,step,pqr):
     '''
     input trainning seq ,
     output pred seq
     '''
     print(len(df))
     ts = df[trainning_seq].fillna(0)
-    print('time zone',ts.index[0],df.index[-1])
-    print('train zone',trainning_seq[0],trainning_seq[-1])
+    print('series time zone',ts.index[0],df.index[-1])
+    print('excepted train zone',trainning_seq[0],trainning_seq[-1])
     print('begin arima ,',tollgate_id ,'d',direction)
     
     #由于是1阶差分，训练序列少一个节点，所以，不需要—+Minute(20)
@@ -443,26 +438,33 @@ def main_1(df,tollgate_id,direction,trainning_seq,step):
     true = df[pred_seq].fillna(0)
     
     #predict
-    pqr = [10,1,8]
-#    pqr = ARIMA_predictBynum(ts,pqr)
-    tollgate_d = ''.join([str(tollgate_id),'-',str(direction)])
-    aicList.append([tollgate_d,pqr])
+    #pqr = [10,1,8]
+    #pqr = ARIMA_predictBynum(ts,pqr)
+    #tollgate_dir = ''.join([str(tollgate_id),'-',str(direction)])
+    #aicList.append([tollgate_dir,pqr])
     
     #按照步数来预测，结果叠加到已知序列
-    pred,result = predict(ts,pred_seq,pqr[0],pqr[1],pqr[2])
-    print(len(pred),len(result[0]))
-    pred = np.array(pred.values)
+    pred,result = predict(ts,step,pqr[0],pqr[1],pqr[2])
+#    if len(pred)<len(train_seq):
+#	pred = pred.fillna(pred.mean())
+#    print(len(pred),len(result[0]))
+#    pred = np.array(pred.values)
 #    pred = pred.reshape((len(pred),1))
-    result = np.concatenate((pred,result[0]))
-#    print(result)
-    pred_seq = pd.date_range(start = (trainning_seq[0]),periods = len(result), freq='20Min')
+    #print('拼接序列')
+    #result = np.concatenate((pred,result[0]))
+    result = result[0]
+    print('强制对齐预测数据时间')
+    if len(result) != len(trainning_seq):
+	print('Length of ARIMA output is ',len(result))
+	sys.exit(0)
+    pred_seq = pd.date_range(start = (trainning_seq[-1]+Minute(20)),periods = len(result), freq='20Min')
     result = pd.Series(data=result,name='pred',index=pred_seq)
     result = np.exp(result)
     ###去除不可能的点
     
     true = df[pred_seq].fillna(0)
 #    print(result)
-    print(len(result),len(ts))
+    print('true seq len and pred seq len is :',len(true),len(result))
     plot_compare(true,result,0)
     
     
@@ -471,7 +473,7 @@ def main_1(df,tollgate_id,direction,trainning_seq,step):
     df.columns = ['time_window_s','volume','pred']
     df.loc[:,'tollgate_id'] = tollgate_id
     df.loc[:,'direction']=direction
-    return df.reset_index()
+    return df
     
     
 #所有测试代码，最后放到这个地方 0602
