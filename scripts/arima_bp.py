@@ -26,7 +26,8 @@ from pandas.tseries.offsets import Day
 from pandas.tseries.offsets import Minute
 
 import matplotlib.pyplot as plt
-
+import json
+import pickle
 
 class bp_net:
     '''
@@ -314,72 +315,67 @@ def pre_train(freq = '20Min'):
                 GLOBAL[param] = pqr
     cache(GLOBAL)
 		
-def train(freq = '20Min',tollgate_id = 1):
+def train(GLOBAL,freq = '20Min',tollgate_id = 1):
     '''
     主要的内容是:数据按照时间分割,送入ARIMA训练,得到结果1
 	      整合结果1,送入BPNN训练,得到训练好的网络
          输出:每个tollgate一个模型
     '''
     df,train_seq,test_seq = gen_df(freq,normalize = False,test=False)
-    print(df.dtypes)
-    step = len(train_seq) #预测前进X步,使得预测长度与输入长度相等
-    batch_x = df[df['tollgate_id']==tollgate_id]
-    batch_x = batch_x.set_index(['tollgate_id','direction','time_window_s'])
-    df1 = df[df['tollgate_id']==tollgate_id].set_index('time_window_s')
-    df1 = df1.groupby('direction')
-    batch = []
-    for direction,group in df1:
-        arima_x = group['volume']
-        if len(arima_x[arima_x.isnull()])>0 or len(arima_x[arima_x == np.nan])>0 or len(arima_x[arima_x == np.inf]):
-            print(arima_x[arima_x.isnull()])
-            print(arima_x[arima == np.nan])
-            print(arima_x[arima == np.inf])
-            sys.exit()
-#        print(arima_x)
-#        sys.exit()
-        print('ARIMA模型,训练8天的数据,默认时间序列周期为一天,通过每天建立模型,得到下一天的输出,最终形成8天8*72个预测值,放到BP中训练')
-        from time_series_analysis_p1 import main_1 as arima
-        #output: tollgate_id,direction time_window_s,pred,volume
-        outputlist = []
-        for day in range(8):
-            #p,q load
-            param_name = ''.join([str(tollgate_id),'-',str(direction),'-',str(train_seq[0].dayofyear)])
-            pqr = GLOBAL[param_name]
-            output = arima(arima_x,tollgate_id,direction,train_seq,step,pqr)
-            print('输出长度应该与预期长度不一致,是否缺少一位 (0:一致,-1:少一位):' ,(len(output)-len(train_seq)))
-            train_seq += Day(1)
-            step = len(train_seq)
-            if len(output) == len(train_seq):
-                print('train seq match output length')
-            else:
-                print(len(output))
-                print(output)
-                sys.exit()
+    df.loc[:,'day'] = df['time_window_s'].dt.dayofyear
+    tolls = df.groupby('tollgate_id')
+    outputlist = []
+    for t,tgroup in tolls:
+        ds = tgroup.groupby('direction')
+        for d,dgroup in ds:
+            for i in range(7):
+                group = dgroup.set_index('time_window_s')['volume']
+                day = train_seq.dayofyear
+                param = ''.join([str(t),'-',str(d),'-',str(day[0])])
+                from time_series_analysis_p1 import main_1 as arima
+                from time_series_analysis_p1 import plot_compare
+                print('ARIMA模型,训练8天的数据,默认时间序列周期为一天,通过每天建立模型,得到下一天的输出,最终形成8天8*72个预测值,放到BP中训练')
+                pqr = GLOBAL[param]
+#                print(param,pqr)
+                step = len(train_seq)
+                step = 72
+                print(pd.isnull(group[train_seq]).sum())
+                if len(group[train_seq]) != len(train_seq) and pd.isnull(group[train_seq]).sum()>0:
+                    print('数据不完整')
+                    sys.exit()
+                output,pqr = arima(group,t,d,train_seq,step,pqr)
                 
-            outputlist.append(output)
+                print(output)
+                outputlist.append(output)
+                print('mse is ',np.mean((output['pred']-output['volume'])**2))
+                
+                train_seq = train_seq.shift(len(train_seq))
+                print('next train seq is ',train_seq[0],train_seq[-1])
 #        print(output)
-        #add weather param
-        output = pd.concat(outputlist)
-        print(len(output))
-        output = output.set_index(['tollgate_id','direction','time_window_s'])
-        print(output.loc[:,'pred'])
-        print(len(output))
-#        sys.exit()
-        batch_x.loc[:,'pred'] = output.loc[:,'pred']
-    
-    batch_x = batch_x[batch_x['pred'].notnull()]
-#    print(batch_x)
+    #add weather param
+    output = pd.concat(outputlist)
+    print(len(output))
+#    plot_compare(None,output['pred'],0)
+#    plot_compare(output['volume'],None,0)
+    output = output.set_index(['tollgate_id','direction','time_window_s'])
+    print(output.loc[:,'pred'])
+    print(len(output))
+    batch_x  = df.set_index(['tollgate_id','direction','time_window_s'])
+    batch_x = batch_x.join(output['pred']).dropna()
+    print(batch_x)
     #normalize
     batch_x.loc[:,'residual'] = batch_x.loc[:,'volume'] - batch_x.loc[:,'pred']#添加残差
     batch_x.loc[:,'pred'] = np.log(batch_x.loc[:,'pred'])
     batch_x.loc[:,'volume'] = np.log(batch_x.loc[:,'volume'])
+    
+    batch_x.to_csv(''.join(['0',r'_arima_bp_log.csv']),index=True)
+def bp_train():
+    batch_x = pd.read_csv('total_arima_bp_log.csv')
+    batch_x.loc[:,'time_window_s']=pd.to_datetime(batch_x['time_window_s'],format=r'%Y/%m/%d %H:%M:%S')
 
-    test_seq = batch_x.index
-    batch_x.to_csv(''.join([str(tollgate_id),r'_arima_bp_log.csv']),index=True)
-    #struct batch
     x_data = np.array(batch_x.reset_index()[['pressure','sea_pressure','wind_direction','wind_speed',
                                 'temperature','rel_humidity','precipitation',
-                                'dayofweek','hour','minute','direction','pattern','pred']])
+                                'dayofweek','hour','minute','direction','pattern']])
     if np.any(np.isnan(x_data)):
         print('nan found ')
         sys.exit(0)
@@ -401,7 +397,6 @@ def train(freq = '20Min',tollgate_id = 1):
     print('train',x_data.shape,y_data.shape)
     print('train seq ',train_seq[0],train_seq[-1])
     print('test seq',test_seq[0],test_seq[-1])
-    
     
     
 def test(freq = '20Min',tollgate_id = 1):
@@ -534,7 +529,7 @@ GLOBAL = {}
 if __name__ == '__main__':
     GLOBAL = cache(GLOBAL)
     print(GLOBAL)
-    train(freq='20Min',tollgate_id=1)
+    train(GLOBAL,freq='20Min',tollgate_id=1)
 #    test(freq='20Min',tollgate_id=1)
 
 

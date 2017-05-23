@@ -273,8 +273,10 @@ def plot_residual(df_log):
     
 def plot_compare(src,trans,window):
     figure(1)
-    plt.plot(src)
-    plt.plot(trans,color='red')
+    if src is not None:
+        plt.plot(src)
+    if trans is not None:
+        plt.plot(trans,color='red')
     plt.show(block=False)
 ##    ts_log_moving_avg_diff = src-trans
 ##    ts_log_moving_avg_diff.dropna(inplace=True)
@@ -292,7 +294,7 @@ def fing_best_pqd(df_log,pqr):
     q=pqr[2]
     d=pqr[1]
     #在测试中已经确定，1阶差分便可以应对这个序列
-    df_log_diff = df_log_diff_func(df_log,1)
+#    df_log_diff = df_log_diff_func(df_log,1)
 #    param = [[10, 1, 8],
 #        [17, 1, 11],
 #        [2, 1, 10],
@@ -307,22 +309,56 @@ def fing_best_pqd(df_log,pqr):
 #            pass
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore")
-        for p in range(20):
-            for q in range(12):
-                try:
-                    results_ARMA=ARMA(df_log_diff,(p,q)).fit(disp=-1,method='css')
-                    x=results_ARMA.aic
-                    x1= p,d,q
-#                    print (x1,x)
-                    if isnan(x):
-    ##                        print('find nan ',x1,x)
-                        continue
-                    aic.append(x)
-                    pdq.append(x1)
-                except Exception as e:
-    ##                    print('ERROR FIND ',x1,x)
-#                    print(e)
-                    pass
+        for p in range(10):
+            for d in range(2):
+                for q in range(6):
+                    results_ARIMA=ARIMA(df_log,(p,d,q))
+                    try:
+                        fit1=results_ARIMA.fit(transparams=True,disp=-1,method='css')##
+#                        dw_test.append(np.abs(model_observe(fit1)-2))
+#                        fitted.append(fit1)
+#                    except Exception  as e:
+#                        print(e,'error fit')
+#                    try:
+#                        for i in range(5):
+#                            init = [np.array([1.] * d + [1./(p+1)] * p + [1./(q+1)] * q),
+#                                np.array([np.mean(df_log)] * d + [1./(p+1)] * p + [1./(q+1)] * q),
+#                                np.array([.1] * d + [1./(p+1)] * p + [1./(q+1)] * q),
+#                                np.array([np.mean(df_log)] * d + [1./(p+1)] * p + [1./(q+1)] * q),
+#                                [0.1 for j in range(p+q+2)]]
+#                            fit1=results_ARIMA.fit(start_params=init[i],disp=-1,transparams=True,method='mle')#
+#                            dw_test.append(np.abs(model_observe(fit1)-2))
+#                            fitted.append(fit1)
+#                    except Exception  as e:
+#                            print(e,'error fit    11111')
+#                            pass
+#                    try:
+#                        fit1=results_ARIMA.fit(transparams=True,disp=-1,method = 'mle')##
+#                        dw_test.append(np.abs(model_observe(fit1)-2))
+#                        fitted.append(fit1)
+#                    except Exception  as e:
+#                        print(e,'error fit    3444444')
+#                        pass
+#                    try:
+#                        fit1=results_ARIMA.fit(disp=-1)##
+#                        dw_test.append(np.abs(model_observe(fit1)-2))
+#                        fitted.append(fit1)
+#                    except Exception  as e:
+#                        print(e,'error fit 45555')
+#                        pass
+#                    try:
+#                        fit1=results_ARIMA.fit(transparams=True,disp=-1,method='css-mle')
+                        x=fit1.aic
+                        x1= p,d,q
+    #                    print (x1,x)
+                        if isnan(x):
+        ##                        print('find nan ',x1,x)
+                            continue
+                        aic.append(x)
+                        pdq.append(x1)
+                    except Exception  as e:
+#                        print(e,'there is no way to fix it')
+                        pass
     keys = pdq
     values = aic
     d = dict(zip(keys, values))
@@ -354,6 +390,7 @@ def model_observe(model):
 def ARIMA_predictBynum(df,pqr):
     df_log = df_log_func(df)
     #findIng----------
+    
     minaic = fing_best_pqd(df_log,pqr)
     return minaic
 
@@ -362,6 +399,8 @@ def predict(df,step,p,d,q):
     '''
     输入：log后的数据，注意不需要差分
     '''
+    dw_test = []
+    fitted = []
     df_log = df_log_func(df)
 #    df_log_diff = df_log_diff_func(df_log,d).dropna(inplace=True)#选择X阶差分
 #    nan = pd.isnull(df_log_diff)
@@ -371,55 +410,32 @@ def predict(df,step,p,d,q):
     #分析时，使用了差分，这里并不需要进行差分
     results_ARIMA=ARIMA(df_log,order=[p,d,q])
     try:
-        results_ARIMA=results_ARIMA.fit(transparams=False,disp=-1,method='css')##
-        dw_test.append(model_observe(results_ARIMA))
+        fit1=results_ARIMA.fit(transparams=True,disp=-1,method='css')
+        dw_test.append(np.abs(model_observe(fit1)-2))
+        fitted.append(fit1)
     except Exception  as e:
-        print(e,'error fit')
-        try:
-    ##        init = np.array([1.] * d + [1./(p+1)] * p + [1./(q+1)] * q)
-            init = np.array([np.mean(df_log)] * d + [1./(p+1)] * p + [1./(q+1)] * q)
-##            init = np.array([.1] * d + [1./(p+1)] * p + [1./(q+1)] * q)
-##            results_ARIMA=results_ARIMA.fit(start_params=init,transparams=False)##
-            results_ARIMA=results_ARIMA.fit(start_params=init,disp=-1,transparams=False)##
-        except Exception  as e:
-            try:
-                print(e,'error fit    11111')
-                print(results_ARIMA)
-                results_ARIMA=results_ARIMA.fit(transparams=True,disp=0)##
-            except Exception  as e:
-                try:
-                    print(e,'error fit    22222')
-##                    init = np.array([.5] * d + [1./(p+1)] * p + [1./(q+1)] * q)
-                    init = np.array([np.mean(df_log)] * d + [1./(p+1)] * p + [1./(q+1)] * q)
-                    results_ARIMA=results_ARIMA.fit(start_params=init,transparams=False,disp=0)##
-                except Exception  as e:
-                    try:
-                        print(e,'error fit    2333333')
-                        results_ARIMA=results_ARIMA.fit(transparams=False,disp=0)##
-                    except Exception  as e:
-                        try:
-                            print(e,'error fit    3444444')
-                            results_ARIMA=results_ARIMA.fit(disp=-1)##
-                        except Exception  as e:
-                            try:
-                                print(e,'error fit 45555')
-                                init = [0.1 for j in range(p+q+2)]
-                                results_ARIMA=results_ARIMA.fit(start_params=init,disp=0)
-                            except Exception  as e:
-                                print(e,'there is no way to fix it')
-##                            dw_test.append(None)
-##                            return
-        dw_test.append(model_observe(results_ARIMA))
-    pdqlist.append((p,d,q))        
-    #df_log的结尾时间
-    endtime = df_log.tail(1).index
-##    print(endtime)
-#    print(results_ARIMA.params)
-#    print(type(results_ARIMA))
-#    print(dir(results_ARIMA))
-    pred = results_ARIMA.predict(end = len(df))
-    result = results_ARIMA.forecast(step)
-    return pred,result
+        print(e,'there is no way to fix it')
+        return None,None,0
+#    try:
+#        fit1=results_ARIMA.fit(transparams=True,disp=-1,method='mle')
+#        dw_test.append(np.abs(model_observe(fit1)-2))
+#        fitted.append(fit1)
+#    except Exception  as e:
+#        print(e,'there is no way to fix it')
+#    try:
+#        fit1=results_ARIMA.fit(transparams=True,disp=-1,method='css-mle')
+#        dw_test.append(np.abs(model_observe(fit1)-2))
+#        fitted.append(fit1)
+#    except Exception  as e:
+#        print(e,'there is no way to fix it')
+    d = dict(zip(fitted,dw_test))
+    #得到最小值----------------------这个方法还不会
+    if d is not None:
+        fit1=min(d,key=d.get)
+    
+    pred = fit1.predict(end = len(df))
+    result = fit1.forecast(step)
+    return pred,result,model_observe(fit1)
 
 
 def main_1(df,tollgate_id,direction,trainning_seq,step,pqr):
@@ -428,7 +444,10 @@ def main_1(df,tollgate_id,direction,trainning_seq,step,pqr):
     output pred seq
     '''
     print(len(df))
-    ts = df[trainning_seq].fillna(0)
+    ts = df[trainning_seq]
+    if (len(ts[ts==0])>0):
+        print('for log ,contain zero',len(ts[ts==0]))
+        sys.exit()
     print('series time zone',ts.index[0],df.index[-1])
     print('excepted train zone',trainning_seq[0],trainning_seq[-1])
     print('begin arima ,',tollgate_id ,'d',direction)
@@ -439,15 +458,20 @@ def main_1(df,tollgate_id,direction,trainning_seq,step,pqr):
     
     #predict
     #pqr = [10,1,8]
-    #pqr = ARIMA_predictBynum(ts,pqr)
+    pqr = ARIMA_predictBynum(ts,pqr)
     #tollgate_dir = ''.join([str(tollgate_id),'-',str(direction)])
     #aicList.append([tollgate_dir,pqr])
     
     #按照步数来预测，结果叠加到已知序列
-    pred,result = predict(ts,step,pqr[0],pqr[1],pqr[2])
-    if dw_test[0]<1 or dw_test[0]>3:
+    pred,result,dw = predict(ts,step,pqr[0],pqr[1],pqr[2])
+    if dw<1 or dw>3:
         pqr = ARIMA_predictBynum(ts,pqr)
         print(pqr)
+        pred,result,_ = predict(ts,step,pqr[0],pqr[1],pqr[2])
+        plot_compare(ts,None,0)
+        if result is None:
+            result = []
+            result.append(np.log((ts-ts.mean())/ts.std()))
 #    if len(pred)<len(train_seq):
 #	pred = pred.fillna(pred.mean())
 #    print(len(pred),len(result[0]))
@@ -456,10 +480,11 @@ def main_1(df,tollgate_id,direction,trainning_seq,step,pqr):
     #print('拼接序列')
     #result = np.concatenate((pred,result[0]))
     result = result[0]
+    print('arima','result',result)
     print('强制对齐预测数据时间')
-    if len(result) != len(trainning_seq):
-        print('Length of ARIMA output is ',len(result))
-        sys.exit(0)
+#    if len(result) != len(trainning_seq):
+#        print('Length of ARIMA output is ',len(result))
+#        sys.exit(0)
     pred_seq = pd.date_range(start = (trainning_seq[-1]+Minute(20)),periods = len(result), freq='20Min')
     result = pd.Series(data=result,name='pred',index=pred_seq)
     result = np.exp(result)
@@ -468,7 +493,7 @@ def main_1(df,tollgate_id,direction,trainning_seq,step,pqr):
     true = df[pred_seq].fillna(0)
 #    print(result)
     print('true seq len and pred seq len is :',len(true),len(result))
-    plot_compare(true,result,0)
+#    plot_compare(true,result,0)
     
     
     df = pd.concat([true,result],axis=1)
@@ -476,8 +501,7 @@ def main_1(df,tollgate_id,direction,trainning_seq,step,pqr):
     df.columns = ['time_window_s','volume','pred']
     df.loc[:,'tollgate_id'] = tollgate_id
     df.loc[:,'direction']=direction
-    return df
-    
+    return df,pqr    
     
 #所有测试代码，最后放到这个地方 0602
 def test_code(ts,window):

@@ -218,7 +218,7 @@ class model1:
         df.loc[:,'time_window_s']=pd.to_datetime(df['time'],format=r'%Y/%m/%d %H:%M:%S')
     #    print(df.head())
         df.loc[:,'volume'] = 1
-        aggregate = lambda x : x.set_index('time_window_s').resample('20Min').agg(sum).fillna(0.0001)# avoid nan and inf
+        aggregate = lambda x : x.set_index('time_window_s').resample('20Min').agg(sum).fillna(1)# avoid nan and inf
         df = df.groupby(['tollgate_id','direction'])[['time_window_s','volume']].apply(aggregate)
     #    print(df.head(100))
         return df.reset_index()
@@ -236,7 +236,7 @@ class model1:
         
         
     def test_union(self):
-        in_file=r'E:\大数据实践\天池大赛KDD CUP\data\dataSets\training\volume(table 6)_training.csv'
+        in_file=r'E:\大数据实践\天池大赛KDD CUP\data\dataSets\testing_phase1\volume(table 6)_test1.csv'
         src = self.load_volume_20Min(in_file)
         df = load_weather(fdir=r'E:\大数据实践\天池大赛KDD CUP\data\dataSets\testing_phase1\weather (table 7)_test1.csv')
         src = src.set_index('time_window_s')
