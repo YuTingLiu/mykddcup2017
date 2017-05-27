@@ -410,24 +410,24 @@ def predict(df,step,p,d,q):
     #分析时，使用了差分，这里并不需要进行差分
     results_ARIMA=ARIMA(df_log,order=[p,d,q])
     try:
-        fit1=results_ARIMA.fit(transparams=True,disp=-1,method='css')
+        fit1=results_ARIMA.fit(transparams=False,disp=-1,method='css')
         dw_test.append(np.abs(model_observe(fit1)-2))
         fitted.append(fit1)
     except Exception  as e:
-        print(e,'there is no way to fix it')
-        return None,None,0
-#    try:
-#        fit1=results_ARIMA.fit(transparams=True,disp=-1,method='mle')
-#        dw_test.append(np.abs(model_observe(fit1)-2))
-#        fitted.append(fit1)
-#    except Exception  as e:
-#        print(e,'there is no way to fix it')
-#    try:
-#        fit1=results_ARIMA.fit(transparams=True,disp=-1,method='css-mle')
-#        dw_test.append(np.abs(model_observe(fit1)-2))
-#        fitted.append(fit1)
-#    except Exception  as e:
-#        print(e,'there is no way to fix it')
+        print(e)
+        try:
+            fit1=results_ARIMA.fit(transparams=False,disp=-1,method='mle')
+            dw_test.append(np.abs(model_observe(fit1)-2))
+            fitted.append(fit1)
+        except Exception  as e:
+            print(e,'there is no way to fix it')
+            try:
+                fit1=results_ARIMA.fit(transparams=False,disp=-1,method='css-mle')
+                dw_test.append(np.abs(model_observe(fit1)-2))
+                fitted.append(fit1)
+            except Exception  as e:
+                print(e,'there is no way to fix it')
+                return None,None,0
     d = dict(zip(fitted,dw_test))
     #得到最小值----------------------这个方法还不会
     if d is not None:
@@ -456,6 +456,8 @@ def main_1(df,tollgate_id,direction,trainning_seq,step,pqr):
     pred_seq = pd.date_range(start = (trainning_seq[-1]),periods = step, freq='20Min')
     true = df[pred_seq].fillna(0)
     
+    #test p value
+    test_code(ts,72)
     #predict
     #pqr = [10,1,8]
     pqr = ARIMA_predictBynum(ts,pqr)
@@ -509,6 +511,31 @@ def test_code(ts,window):
     test_stationarity(ts,window)
     plot_acf_pacf(df_log_diff_func(ts,2),ts_log)
     
+def adf_test(ts):
+    adftest = adfuller(ts, autolag='AIC')
+    adf_res = pd.Series(adftest[0:4], index=['Test Statistic','p-value','Lags Used','Number of Observations Used'])
+
+    for key, value in adftest[4].items():
+        adf_res['Critical Value (%s)' % key] = value
+    return adf_res
+
+
+def draw_ar(ts, w ,step=1):
+    arma = ARMA(ts, order=(w,0)).fit(disp=-1)
+    ts_predict = arma.predict()
+
+    plt.clf()
+    plt.plot(ts_predict, label="PDT")
+    plt.plot(ts, label = "ORG")
+    plt.legend(loc="best")
+    plt.title("AR Test %s" % w)
+    plt.show()
+    
+    ts_predict = arma.forecast(step)
+
+    print(ts_predict)
+    return(ts_predict[0])
+    
     
 singerCode=[]
 dw_test = []
@@ -522,19 +549,21 @@ aicList = []
 total = []
 if __name__ == '__main__':
     from data_util import *
-    in_file=r'E:\大数据实践\天池大赛KDD CUP\data\dataSets\training\volume(table 6)_training.csv'
-    model = model1()
-    df = model.load_volume_20Min(fdir = in_file)
+    in_file=r'train_union.csv'
+    df = load_volume(fdir = in_file)
     print(df.head())
-    start = '10/15/2016 06:00'
+    start = '10/8/2016 06:00'
     end = '10/16/2016 06:00'
     periods = 12 #4 hours
     freq = '20Min'
     t_seq = pd.date_range(start=start,end=end,freq=freq)
     #test
-#    ts = df[(df['tollgate_id']==1) & (df['direction'] ==0)].set_index('time_window_s')['volume'][t_seq]
-#    test_code(ts,72)
-#    sys.exit(0)
+    ts = df[(df['tollgate_id']==1) & (df['direction'] ==0)].set_index('time_window_s')['volume'][t_seq]
+    test_code(ts,72)
+    adf = adf_test(ts)
+    print('output lag used is ;',int(adf['Lags Used']))
+    draw_ar(ts, int(adf['Lags Used']))
+    sys.exit(0)
     
     
     pred_seq = (t_seq + Day(len(set(t_seq.day))))[0:12]

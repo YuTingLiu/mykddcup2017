@@ -29,6 +29,10 @@ import matplotlib.pyplot as plt
 import json
 import pickle
 
+from time_series_analysis_p1 import ARIMA_predictBynum
+from time_series_analysis_p1 import main_1 as arima
+from time_series_analysis_p1 import plot_compare
+
 class bp_net:
     '''
     '''
@@ -250,7 +254,7 @@ def gen_df(freq='T',normalize = False,test = False,pat = True,periods=72):
     '''
     if freq is '20Min':
         df = load_volume(fdir='train_union.csv')
-        train_seq = produce_seq(start='10/8/2016 00:00',periods=periods,freq='20Min',days = 1)
+        train_seq = produce_seq(start='10/16/2016 00:00',periods=periods,freq='20Min',days = 1)
         if len(train_seq) != 72*20:
             print('train_seq len ',len(train_seq))
 #            sys.exit()
@@ -310,7 +314,6 @@ def pre_train(freq = '20Min'):
                 group = group.set_index('time_window_s')['volume']
                 param = ''.join([str(t),'-',str(d),'-',str(day)])
                 print('pre train param for ',param)
-                from time_series_analysis_p1 import ARIMA_predictBynum
                 pqr = ARIMA_predictBynum(group,[0,1,0])
                 GLOBAL[param] = pqr
     cache(GLOBAL)
@@ -323,19 +326,20 @@ def train(GLOBAL,freq = '20Min',tollgate_id = 1):
     '''
     df,train_seq,test_seq = gen_df(freq,normalize = False,test=False)
     df.loc[:,'day'] = df['time_window_s'].dt.dayofyear
+    train_seq1 = train_seq.copy()
     tolls = df.groupby('tollgate_id')
     outputlist = []
     for t,tgroup in tolls:
         ds = tgroup.groupby('direction')
         for d,dgroup in ds:
-            for i in range(7):
+            train_seq = train_seq1.copy()
+            for i in range(1):
                 group = dgroup.set_index('time_window_s')['volume']
+                group = group.rolling(72).mean()
                 day = train_seq.dayofyear
                 param = ''.join([str(t),'-',str(d),'-',str(day[0])])
-                from time_series_analysis_p1 import main_1 as arima
-                from time_series_analysis_p1 import plot_compare
                 print('ARIMA模型,训练8天的数据,默认时间序列周期为一天,通过每天建立模型,得到下一天的输出,最终形成8天8*72个预测值,放到BP中训练')
-                pqr = GLOBAL[param]
+                pqr = [1,1,1]
 #                print(param,pqr)
                 step = len(train_seq)
                 step = 72
@@ -345,35 +349,45 @@ def train(GLOBAL,freq = '20Min',tollgate_id = 1):
                     sys.exit()
                 output,pqr = arima(group,t,d,train_seq,step,pqr)
                 
-                print(output)
                 outputlist.append(output)
                 print('mse is ',np.mean((output['pred']-output['volume'])**2))
                 
+                plot_compare(output['volume'],output['pred'],0)
+                
+                
                 train_seq = train_seq.shift(len(train_seq))
                 print('next train seq is ',train_seq[0],train_seq[-1])
+            
+            param = ''.join([str(t),str(i)])
+            GLOBAL[param] = str(day[0])
+                
+        output = pd.concat(outputlist)
+        output.to_csv(''.join([train_f,'//',str(t),'_',str(day[0]),'.csv']),index=False)
 #        print(output)
     #add weather param
     output = pd.concat(outputlist)
     print(len(output))
-#    plot_compare(None,output['pred'],0)
-#    plot_compare(output['volume'],None,0)
     output = output.set_index(['tollgate_id','direction','time_window_s'])
-    print(output.loc[:,'pred'])
+#    print(output.loc[:,'pred'])
     print(len(output))
     batch_x  = df.set_index(['tollgate_id','direction','time_window_s'])
     batch_x = batch_x.join(output['pred']).dropna()
-    print(batch_x)
+#    print(batch_x)
     #normalize
     batch_x.loc[:,'residual'] = batch_x.loc[:,'volume'] - batch_x.loc[:,'pred']#添加残差
     batch_x.loc[:,'pred'] = np.log(batch_x.loc[:,'pred'])
     batch_x.loc[:,'volume'] = np.log(batch_x.loc[:,'volume'])
     
-    batch_x.to_csv(''.join(['0',r'_arima_bp_log.csv']),index=True)
+    batch_x.to_csv(''.join(['total',r'_arima_bp_log.csv']),index=True)
+    f = open('dump_param.pkl','wb')
+    pickle.dump(GLOBAL,f)
+    f.close()
+#    GLOBAL = cache(GLOBAL)
 def bp_train():
     batch_x = pd.read_csv('total_arima_bp_log.csv')
     batch_x.loc[:,'time_window_s']=pd.to_datetime(batch_x['time_window_s'],format=r'%Y/%m/%d %H:%M:%S')
 
-    x_data = np.array(batch_x.reset_index()[['pressure','sea_pressure','wind_direction','wind_speed',
+    x_data = np.array(batch_x[['pressure','sea_pressure','wind_direction','wind_speed',
                                 'temperature','rel_humidity','precipitation',
                                 'dayofweek','hour','minute','direction','pattern']])
     if np.any(np.isnan(x_data)):
@@ -524,11 +538,13 @@ def cache(config,fdir='global_config.txt'):
         f = open(fdir,'w')
 #        json.dump(config,f)
         f.close()
+        return config
 
 GLOBAL = {}
+train_f = '../train'
 if __name__ == '__main__':
-    GLOBAL = cache(GLOBAL)
-    print(GLOBAL)
+#    GLOBAL = cache(GLOBAL)
+#    print(GLOBAL)
     train(GLOBAL,freq='20Min',tollgate_id=1)
 #    test(freq='20Min',tollgate_id=1)
 

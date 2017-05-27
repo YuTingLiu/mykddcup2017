@@ -19,3 +19,5 @@ scripts/__MACOSX/*
 /scripts/*.DS_Store
 /scripts/*.csv
 /*.csv
+
+train/
