@@ -81,104 +81,6 @@ def GetFileList(dir, fileList):
 
 
 
-def train(resultARIMA,df_log):
-##    plt.plot(df_log_diff)
-##    plt.plot(results_ARIMA.fittedvalues, color='red')
-##    plt.title('RSS: %.4f'% sum((results_ARIMA.fittedvalues-df_log_diff)**2))
-##    plt.show()
-    predictions_ARIMA_diff = pd.Series(resultARIMA.fittedvalues, copy=True)
-    predictions_ARIMA_diff_cumsum = predictions_ARIMA_diff.cumsum()
-    predictions_ARIMA_log = pd.Series(df_log['song_daily_count'], index=df_log.index)
-    
-##    #：1）选择最末期数据；2）选择近三期数据的平均；3）选择近三期的移动平均
-    predictions_ARIMA_log = predictions_ARIMA_diff_cumsum.add(predictions_ARIMA_log.mean(),fill_value=0)    
-    predictions_ARIMA = np.exp(predictions_ARIMA_log)
-    print('len :%',len(predictions_ARIMA))
-##    plt.plot(df)
-##    plt.plot(predictions_ARIMA, color='red')
-##    plt.title('RMSE: %.4f'% np.sqrt(sum((predictions_ARIMA-np.exp(df_log))**2)/len(np.exp(df_log))))
-##    plt.show()
-    return predictions_ARIMA
-
-
-def train_for_weka(result):
-##    plt.plot(df_log_diff)
-##    plt.plot(results_ARIMA.fittedvalues, color='red')
-##    plt.title('RSS: %.4f'% sum((results_ARIMA.fittedvalues-df_log_diff)**2))
-##    plt.show()
-##    predictions_ARIMA_diff = pd.Series(result, copy=True)
-##    print(predictions_ARIMA_diff.head())
-    predictions_ARIMA_diff_cumsum = result
-    print( predictions_ARIMA_diff_cumsum.head())
-    predictions_ARIMA_log = pd.Series(df_log['song_daily_count'], index=df_log.index)
-    print('predict len:%', len(predictions_ARIMA_log.index))
-    print(predictions_ARIMA_log.head())
-    
-    predictions_ARIMA_log = predictions_ARIMA_log.add(predictions_ARIMA_diff_cumsum['train'],fill_value=0)
-    print(df_log.head())
-    print(predictions_ARIMA_log.head())
-    predictions_ARIMA = np.exp(predictions_ARIMA_log)
-    print('len :%',len(predictions_ARIMA))
-##    plt.plot(df)
-##    plt.plot(predictions_ARIMA, color='red')
-##    plt.title('RMSE: %.4f'% np.sqrt(sum((predictions_ARIMA-np.exp(df_log))**2)/len(np.exp(df_log))))
-##    plt.show()
-    return predictions_ARIMA
-
-  
-def train_for_predict(predict_series,df_log):
-    predictions_ARIMA_diff_cumsum = predict_series
-##    print( predictions_ARIMA_diff_cumsum.head())
-    predictions_ARIMA_log = pd.Series(df_log, index=df_log.index)
-##    print('predict len:%', len(predictions_ARIMA_log.index))
-##    print(predictions_ARIMA_log.head())
-
-    #：1）选择最末期数据；2）选择近三期数据的平均；3）选择近三期的移动平均
-##    predictions_ARIMA_log = predictions_ARIMA_diff_cumsum.add(predictions_ARIMA_log.mean(),fill_value=0)    
-
-    #每月一分组，大概吧，这个可以再看
-    #没有进入到分组-----》按照月份分组有什么不对
-    grouped = predictions_ARIMA_diff_cumsum.groupby(lambda x:x.month)
-    result = pd.Series()
-    for name,group in grouped:
-        print('before')
-        print(group)
-        plt.plot(predictions_ARIMA_log)
-##        mean = predictions_ARIMA_log.rolling(30).mean().shift(len(group.index),freq='D')
-        #使用最近一个月的平均值作为基础值
-        #存在问题：所以会存在月预测出现相同，与上个月相同。
-        mean = predictions_ARIMA_log.shift(len(group.index),freq='D').mean()
-        
-        #使用最近三个月的移动平均使用基值
-##        mean = predictions_ARIMA_log.shift(len(group.index),freq='D')
-##        mean = mean.tail(90).rolling(30).mean()
-##        mean = mean.mean()
-        
-        #使用最近三个月的移动平均使用基值
-##        mean = predictions_ARIMA_log.shift(len(group.index),freq='D')#时间一致
-##        mean = mean.rolling(2).mean()
-##        mean = pd.Series(mean.tail(len(group.index)).values,index = group.index)
-##        plt.plot(mean, color='red')
-##        plt.show()
-        print('mean')
-        print(mean)
-        group = group.add(mean,fill_value=0)
-        print('after')
-        print(group)
-        result = result.append(group)
-
-
-    print(result.head())
-    predictions_ARIMA = np.exp(result)
-    print('predictions_ARIMA len :%',len(predictions_ARIMA))
-##    plt.plot(df)
-##    plt.plot(predictions_ARIMA, color='red')
-##    plt.title('RMSE: %.4f'%
-##              np.sqrt(sum((predictions_ARIMA-np.exp(df_log['song_daily_count']))**2)/
-##                      len(np.exp(df_log['song_daily_count']))))
-##    plt.show()
-    return predictions_ARIMA
-
 '''
 #------------------------不同的预处理
 #对时间序列取对数,做差分
@@ -199,17 +101,6 @@ def df_log_diff_func(df_log,x):
 ##    print('df_log_diff len:')
 ##    print(len(df_log_diff.index))
     return df_log_diff
-    
-def undiff_unlog_df(df_log_diff,x):
-    '''
-    由序列还原
-    '''
-    print(df_log_diff)
-    df = df_log_diff + df_log_diff.shift(-x)
-    print(df)
-    df = np.exp(df)
-    print('exp',df)
-    return df
 
 def df_log_ewma_func(df_log,x):
     ###使用ewma来平稳序列
@@ -220,24 +111,23 @@ def df_log_ewma_func(df_log,x):
     df_log_ewma_diff = df_log - expwighted_avg
     temp = test_stationarity(df_log_ewma_diff,x)
 
-def plot_acf_pacf(ts_log_diff,ts_log,nlags=60):
-    ts_log_diff = ts_log
+def plot_acf_pacf(ts_log,nlags=60):
     figure(2)
-    lag_acf = acf(ts_log_diff, nlags=nlags)
-    lag_pacf = pacf(ts_log_diff, nlags=nlags, method='ols')
+    lag_acf = acf(ts_log, nlags=nlags)
+    lag_pacf = pacf(ts_log, nlags=nlags, method='ols')
     #Plot ACF: 
     plt.subplot(121) 
     plt.plot(lag_acf)
     plt.axhline(y=0,linestyle='--',color='gray')
-    plt.axhline(y=-1.96/np.sqrt(len(ts_log_diff)),linestyle='--',color='gray')
-    plt.axhline(y=1.96/np.sqrt(len(ts_log_diff)),linestyle='--',color='gray')
+    plt.axhline(y=-1.96/np.sqrt(len(ts_log)),linestyle='--',color='gray')
+    plt.axhline(y=1.96/np.sqrt(len(ts_log)),linestyle='--',color='gray')
     plt.title('Autocorrelation Function')
     #Plot PACF:
     plt.subplot(122)
     plt.plot(lag_pacf)
     plt.axhline(y=0,linestyle='--',color='gray')
-    plt.axhline(y=-1.96/np.sqrt(len(ts_log_diff)),linestyle='--',color='gray')
-    plt.axhline(y=1.96/np.sqrt(len(ts_log_diff)),linestyle='--',color='gray')
+    plt.axhline(y=-1.96/np.sqrt(len(ts_log)),linestyle='--',color='gray')
+    plt.axhline(y=1.96/np.sqrt(len(ts_log)),linestyle='--',color='gray')
     plt.title('Partial Autocorrelation Function')
     plt.tight_layout()
 '''
@@ -387,6 +277,8 @@ def model_observe(model):
 ##    fig = qqplot(resid, line='q', ax=ax, fit=True)
 ##    fig.show()
     return sm.stats.durbin_watson(model.resid.values)
+
+
 def ARIMA_predictBynum(df,pqr):
     df_log = df_log_func(df)
     #findIng----------
@@ -394,6 +286,76 @@ def ARIMA_predictBynum(df,pqr):
     minaic = fing_best_pqd(df_log,pqr)
     return minaic
 
+
+def pre_ts(ts):
+    '''定义一个时间序列预处理函数,
+     主要功能:对输入序列判断平稳性,通过取对数/做差分/滑动平均/多项式拟合/等等技术来消除趋势
+    '''
+    window = 12
+    ts_log = ts_log_func(ts)
+    ts_roll = ts.rolling(72).mean()
+    ts_diff = (ts - ts.shift()).dropna()
+    #ts_ploynominal = #比如符合节日特征的多项式
+    #通过均值方差是否平稳/检验是否平稳
+    test_stationarity(ts,window)
+    #plot_acf_pacf(ts_log)
+    #结论:什么方法的得到的序列是平稳的,置信的
+    #假设返回log,1阶差分序列平稳
+
+    #找到最佳p/q值
+    
+
+def train(df,step,p,d,q):
+    '''
+    输入：log后的数据，注意不需要差分
+    模型中使用差分会在输出结果上反应出来,使用df.consum()还原
+
+    返回:模型与原序列预测的值
+    '''
+    dw_test = []
+    fitted = []
+    df_log = df_log_func(df)
+    print('train time zone is ',df_log.index[0],df_log.index[-1])
+    print(p,d,q)
+    #分析时，使用了差分，这里并不需要进行差分
+    results_ARIMA=ARIMA(df_log,order=[p,d,q])
+    try:
+        fit1=results_ARIMA.fit(transparams=False,disp=-1,method='css')
+        dw_test.append(np.abs(model_observe(fit1)-2))
+        fitted.append(fit1)
+    except Exception  as e:
+        print(e)
+        try:
+            fit1=results_ARIMA.fit(transparams=False,disp=-1,method='mle')
+            dw_test.append(np.abs(model_observe(fit1)-2))
+            fitted.append(fit1)
+        except Exception  as e:
+            print(e,'there is no way to fix it')
+            try:
+                fit1=results_ARIMA.fit(transparams=False,disp=-1,method='css-mle')
+                dw_test.append(np.abs(model_observe(fit1)-2))
+                fitted.append(fit1)
+            except Exception  as e:
+                print(e,'there is no way to fix it')
+                return None,None,0
+    d = dict(zip(fitted,dw_test))
+    #得到最小值----------------------这个方法还不会
+    if d is not None:
+        fit1=min(d,key=d.get)
+    #save this fitted model
+    fit1.save('fitted_arima.pkl')
+    
+    #返回训练好的模型数据
+    #还原到原序列空间 , 需要改进还原
+    predictions_ARIMA_diff = pd.Series(fit1.fittedvalues, copy=True)
+    predictions_ARIMA_diff_cumsum = predictions_ARIMA_diff.cumsum() #累和操作
+    predictions_ARIMA_log = pd.Series(df_log.ix[-1], index=df_log.index)
+    
+##    #：1）选择最末期数据；2）选择近三期数据的平均；3）选择近三期的移动平均
+    predictions_ARIMA_log = predictions_ARIMA_diff_cumsum.add(predictions_ARIMA_log.mean(),fill_value=0)    
+    predictions_ARIMA = np.exp(predictions_ARIMA_log)
+    print('len :%',len(predictions_ARIMA))
+    return fit1,predictions_ARIMA
 
 def predict(df,step,p,d,q):
     '''
@@ -506,10 +468,6 @@ def main_1(df,tollgate_id,direction,trainning_seq,step,pqr):
     return df,pqr    
     
 #所有测试代码，最后放到这个地方 0602
-def test_code(ts,window):
-    ts_log = df_log_func(ts)
-    test_stationarity(ts,window)
-    plot_acf_pacf(df_log_diff_func(ts,2),ts_log)
     
 def adf_test(ts):
     adftest = adfuller(ts, autolag='AIC')
@@ -518,7 +476,6 @@ def adf_test(ts):
     for key, value in adftest[4].items():
         adf_res['Critical Value (%s)' % key] = value
     return adf_res
-
 
 def draw_ar(ts, w ,step=1):
     arma = ARMA(ts, order=(w,0)).fit(disp=-1)
@@ -535,7 +492,6 @@ def draw_ar(ts, w ,step=1):
 
     print(ts_predict)
     return(ts_predict[0])
-    
     
 singerCode=[]
 dw_test = []

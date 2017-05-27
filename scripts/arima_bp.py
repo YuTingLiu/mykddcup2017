@@ -332,13 +332,15 @@ def train(GLOBAL,freq = '20Min',tollgate_id = 1):
     for t,tgroup in tolls:
         ds = tgroup.groupby('direction')
         for d,dgroup in ds:
-            train_seq = train_seq1.copy()
-            for i in range(1):
-                group = dgroup.set_index('time_window_s')['volume']
-                group = group.rolling(72).mean()
-                day = train_seq.dayofyear
+            patts = dgroup.groupby('pattern')
+            for pat,group in patts:
+                #需要修改时间序列.分为两个部分,9.17-9.30 & 10.8-10.17 and 10.1-10.7
+                #每个tollgate.每个方向的ts
+                group = group.set_index('time_window_s')['volume']
+                #group = group.rolling(72).mean()
+                day = train_seq.dayofyear#分割训练序列标志
                 param = ''.join([str(t),'-',str(d),'-',str(day[0])])
-                print('ARIMA模型,训练8天的数据,默认时间序列周期为一天,通过每天建立模型,得到下一天的输出,最终形成8天8*72个预测值,放到BP中训练')
+                print('ARIMA模型,训练X天的数据,默认时间序列周期为一天,通过建立模型,得到下一天的输出,放到BP中训练')
                 pqr = [1,1,1]
 #                print(param,pqr)
                 step = len(train_seq)
