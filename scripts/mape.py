@@ -13,21 +13,16 @@ def load_volume(fdir='training_20min_avg_volume.csv'):
 
 
 def mape(df):
-    T = 84
-    C = 5
-    unit_p = lambda x : np.abs((x['volume']-x['pred'])/x['volume'])
-    df = df.groupby(['tollgate_id','direction','time_window_s'])[['volume','pred']].apply(unit_p)
-
-    df = df.reset_index().groupby(['tollgate_id','direction']).agg(sum)
-    df = df/T
-    return df.sum()/C
+    df.loc[:,'mape'] = np.abs((df[df.columns[0]]-df[df.columns[1]])/df[df.columns[0]])
+    print(df[df['mape']>0.5][[df.columns[0],df.columns[1]]])
+    return df['mape'].sum()/len(df.index)
 
 
 
 def main():
-    df = load_volume(fdir='arima_result.csv')
+    df = load_volume(fdir=r'../arima_result.csv')
     df = df.set_index(['tollgate_id','direction','time_window_s'])
-    df.loc[:,'mape'] = np.abs((df['volume']-df['pred'])/df['volume'])
+    df.loc[:,'mape'] = np.abs((df[df.columns[0]]-df[df.columns[1]])/df[df.columns[0]])
     print(df[df['mape']>0.5].reset_index()[['time_window_s','direction','volume','pred']])
     result = df['mape'].sum()/len(df.index)
     print('MAPE for this model is ',result)    

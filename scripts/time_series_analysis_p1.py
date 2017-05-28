@@ -168,6 +168,7 @@ def plot_compare(src,trans,window):
     if trans is not None:
         plt.plot(trans,color='red')
     plt.show(block=False)
+    plt.savefig(r'output.png')
 ##    ts_log_moving_avg_diff = src-trans
 ##    ts_log_moving_avg_diff.dropna(inplace=True)
 ##    temp = test_stationarity(df_log_diff,x)
@@ -287,17 +288,27 @@ def ARIMA_predictBynum(df,pqr):
     return minaic
 
 
-def pre_ts(ts):
+def pre_ts(arg,ts):
     '''定义一个时间序列预处理函数,
      主要功能:对输入序列判断平稳性,通过取对数/做差分/滑动平均/多项式拟合/等等技术来消除趋势
     '''
-    window = 12
-    ts_log = ts_log_func(ts)
-    ts_roll = ts.rolling(72).mean()
+    window = 72
+    ts_log = df_log_func(ts)
+    ts_log_roll = ts_log.rolling(window).mean().dropna()
     ts_diff = (ts - ts.shift()).dropna()
+    ts_log_diff = (ts_log - ts_log.shift()).dropna()
     #ts_ploynominal = #比如符合节日特征的多项式
     #通过均值方差是否平稳/检验是否平稳
-    test_stationarity(ts,window)
+#    print('origin')
+#    test_stationarity(ts,window)
+#    print('ts.log')
+#    test_stationarity(ts_log,window)
+    print(arg,'ts.roll')
+    test_stationarity(ts_log_roll,window)
+    print(arg,'ts.diff')
+    test_stationarity(ts_diff,window)
+    print(arg,'ts.log.diff')
+    test_stationarity(ts_log_diff,window)
     #plot_acf_pacf(ts_log)
     #结论:什么方法的得到的序列是平稳的,置信的
     #假设返回log,1阶差分序列平稳
@@ -508,18 +519,37 @@ if __name__ == '__main__':
     in_file=r'train_union.csv'
     df = load_volume(fdir = in_file)
     print(df.head())
-    start = '10/8/2016 06:00'
-    end = '10/16/2016 06:00'
+    start = '10/8/2016 00:00'
+    end = '10/15/2016 23:40'
     periods = 12 #4 hours
     freq = '20Min'
     t_seq = pd.date_range(start=start,end=end,freq=freq)
     #test
-    ts = df[(df['tollgate_id']==1) & (df['direction'] ==0)].set_index('time_window_s')['volume'][t_seq]
-    test_code(ts,72)
-    adf = adf_test(ts)
-    print('output lag used is ;',int(adf['Lags Used']))
-    draw_ar(ts, int(adf['Lags Used']))
-    sys.exit(0)
+    for i in range(1,4):
+        for j in range(2):
+            if i==2 and j==1:
+                continue
+            ts = df[(df['tollgate_id']==i) & (df['direction'] ==j)].set_index('time_window_s')[['volume']].loc[t_seq,:]
+            print('found nan values',np.sum(pd.isnull(ts['volume'])))
+            if np.sum(pd.isnull(ts['volume']))==0:
+                arg = '-'.join([str(i),str(j)])
+#                pre_ts(arg,ts['volume'])
+            #    test_code(ts,72)
+            #    adf = adf_test(ts)
+            #    print('output lag used is ;',int(adf['Lags Used']))
+            #    draw_ar(ts, int(adf['Lags Used']))
+            from time_series_analysis_p2 import run_aram
+            model,MRSE = run_aram(ts, 1, 1, test_size = 0)
+            model.plot_fit(figsize=(10,5))
+#            model.plot_predict(h=10, oos_data=ts['volume'].iloc[-12:], past_values=100, figsize=(15,5))
+            mu,Y=model._model(model.latent_variables.get_z_values())
+            values=model.link(mu)
+            values = np.concatenate((np.zeros(1),values))
+            temp = np.exp(pd.Series(data=values,index=ts.index))
+            ts.loc[:,'pred'] = temp
+            ts.to_csv(r'output.csv')
+            plot_compare(ts['volume'],ts['pred'],0)
+            sys.exit(0)
     
     
     pred_seq = (t_seq + Day(len(set(t_seq.day))))[0:12]

@@ -57,27 +57,42 @@ def predict_recover(ts, train, diffn):
     return ts
 
 
-def run_aram(df, maxar, maxma, test_size = 14):
+def run_aram(df, maxar, maxma, test_size = 6,maxdiff = 6):
     data = df.dropna()
-    data = np.log(data[data.columns[0]])
+    diffn = 0
+    data.loc[:,'log'] = np.log(data[data.columns[0]])
     #    test_size = int(len(data) * 0.33)
     train_size = len(data)-int(test_size)
-    train, test = data[:train_size], data[train_size:]
-    if test_stationarity(train[train.columns[1]]) < 0.01:
-        print('平稳，不需要差分')
+    ts, test = data['log'][:train_size], data['log'][train_size:]
+    if test_stationarity(ts) < 0.01:
+        print(len(ts),'平稳，不需要差分')
     else:
-        diffn = best_diff(train, maxdiff = 8)
-        train = produce_diffed_timeseries(train, diffn)
+        diffn = best_diff(ts, maxdiff = maxdiff)
+        ts = produce_diffed_timeseries(ts, diffn)
         print('差分阶数为'+str(diffn)+'，已完成差分')
     print('开始进行ARMA拟合')
-    order = choose_order(train[train.columns[2]], maxar, maxma)
+    order = choose_order(ts, maxar, maxma)
     print('模型的阶数为：'+str(order))
     _ar = order[0]
     _ma = order[1]
-    model = pf.ARIMA(data=train, ar=_ar, ma=_ma, family=pf.Normal())
+#    print(ts)
+    print(type(ts))
+    model = pf.ARIMA(data=ts.values, ar=_ar, ma=_ma,family=pf.Normal())
     model.fit("MLE")
-    test = test['payment_times']
     test_predict = model.predict(int(test_size))
-    test_predict = predict_recover(test_predict, train, diffn)
-    RMSE = np.sqrt(((np.array(test_predict)-np.array(test))**2).sum()/test.size)
-    print("测试集的RMSE为："+str(RMSE))
+    mu,Y=model._model(model.latent_variables.get_z_values())
+    fitted_values = model.link(mu)
+    temp = np.ones((len(data)-test_size-len(fitted_values)))*np.mean(fitted_values)
+    fitted_values = np.concatenate((temp,fitted_values))
+    print(len(fitted_values),len(data))
+    if test_size > 0:
+        fitted_values = np.concatenate((fitted_values,np.array(test_predict).flatten()))
+    temp = pd.Series(data=fitted_values,index=data.index)
+    #re
+    temp = predict_recover(temp,ts,diffn)
+    
+    test_predict1 = predict_recover(test_predict, ts, diffn)
+    RMSE = np.sqrt(((np.array(test_predict1)-np.array(test))**2).sum()/test.size)
+    print(len(test_predict),"测试集的RMSE为："+str(RMSE))
+    
+    return model,RMSE,temp,diffn

@@ -23,7 +23,7 @@ from pandas.tseries.offsets import Minute
 import matplotlib.pyplot as plt
 
 
-class bp_net:
+class rbf_net:
     '''
     '''
     
@@ -66,16 +66,17 @@ class bp_net:
             def sigma(input_x):
                 return tf.div(tf.constant(1.0),
                               tf.add(tf.constant(1.0), tf.exp(tf.negative(input_x))))
+                
             def rbf_kernel(input_x):
                 gamma = tf.constant(-25.)
-		sq_dists = tf.multiply(2, tf.matmul(input_x,tf.transpose(input_x))
-		return tf.exp(tf.multiply(gamma,tf.abs(sq_dists))
+                sq_dists = tf.multiply(2, tf.matmul(input_x,tf.transpose(input_x)))
+                return tf.exp(tf.multiply(gamma,tf.abs(sq_dists)))
 
 
             #z_1 = tf.add(tf.matmul(self.x, self.w_1), self.b_1)
-	    z_1 = tf.matmul(self.x, self.w_1)
+            z_1 = tf.matmul(self.x, self.w_1)
             #a_1 = sigma(z_1)
-	    a_1 = rbf_kernel(z_1)
+            a_1 = rbf_kernel(z_1)
             a_2 = tf.add(tf.matmul(a_1, self.w_2), self.b_2,name='output') #linear output !!!!
             
             diff = tf.subtract(a_2, self.y_true)

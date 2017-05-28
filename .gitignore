@@ -21,3 +21,5 @@ scripts/__MACOSX/*
 /*.csv
 
 train/
+dataSet_phase2/
+arima/

@@ -1,4 +1,4 @@
-mport tensorflow as tf
+import tensorflow as tf
 from tensorflow.contrib import rnn
 
 batch_size = 4

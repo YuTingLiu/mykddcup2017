@@ -114,7 +114,7 @@ class bp_net:
                 self.session.run(optimizer , feed_dict={self.x: _X, 
                                                 self.y_true: _Y,
                                                 self.batch_size : N})
-                if step % 100 == 0:
+                if step % 5000 == 0:
                     # 计算精度
                     acc = self.session.run(acct_res, feed_dict={self.x: _X, 
                                                         self.y_true: _Y,
@@ -125,6 +125,9 @@ class bp_net:
                                                      self.batch_size : N})
                     print("Iter " + str(step) + ", Minibatch Loss= " +\
                     "{:.6f}".format(cost) + ", Training Accuracy= " + "{:.5f}".format(acc))
+                    if cost < 0.1:
+                        self.saver.save(self.session,save_path=os.path.join(self.modeldir,self.modelname), global_step=step)
+                        break
                 step += 1
             # 如果准确率大于50%,保存模型,完成训练
             self.saver.save(self.session,save_path=os.path.join(self.modeldir,self.modelname), global_step=step)
@@ -146,9 +149,21 @@ class bp_net:
 #            self.session.run(tf.global_variables_initializer())#>0.11rc 更新了模型保存方式
             ckpt = tf.train.get_checkpoint_state(self.modeldir)
             if ckpt and ckpt.model_checkpoint_path:
-                print(''.join([ckpt.model_checkpoint_path,'.meta']))
-                self.saver = tf.train.import_meta_graph(''.join([ckpt.model_checkpoint_path,'.meta']))
-                self.saver.restore(self.session,ckpt.model_checkpoint_path)
+                checked = ''.join([ckpt.model_checkpoint_path,'.meta'])
+                print(checked)
+                param = ''.join([self.modeldir,self.modelname,'-',str(self.training_iters),'.meta'])
+                path = ''.join([self.modeldir,self.modelname,'-',str(self.training_iters)])
+                if checked is param:
+                    self.saver = tf.train.import_meta_graph(checked)
+                    self.saver.restore(self.session,ckpt.model_checkpoint_path)
+                else:
+                    print('load your model',param)
+                    try:
+                        self.saver = tf.train.import_meta_graph(param)
+                        self.saver.restore(self.session,path)
+                    except Exception as e:
+                        print('load model',e)
+                        sys.exit(0)
     #        self.saver.restore(self.session,self.savefile)
             #print all variable
 #            for op in self.graph.get_operations():
@@ -248,317 +263,3 @@ class bp_net:
         return 1-error_rate(self.predict(_X),_Y)
 ################################################################################    
     
-def gen_df(freq='T',normalize = False,test = False,pat = True,periods=72):
-    '''
-    help fun
-    '''
-    if freq is '20Min':
-        df = load_volume(fdir='train_union.csv')
-        train_seq = produce_seq(start='10/16/2016 00:00',periods=periods,freq='20Min',days = 1)
-        if len(train_seq) != 72*20:
-            print('train_seq len ',len(train_seq))
-#            sys.exit()
-        if test is True:
-            df = load_test(fdir='test_union.csv')
-            test_seq = produce_seq(start='10/18/2016 07:20',periods=1,freq='20Min',days = 1)
-            df = prep(df,pat=pat,normalize=normalize)
-        else:
-            test_seq = produce_seq(start='10/16/2016 06:00',periods=periods,freq='20Min',days = 1)
-            df = prep(df,pat=pat,normalize=normalize)
-    else:
-        sys.exit(0)
-    return df,train_seq,test_seq
-
-
-def produce_seq(start='09/19/2016 00:20',periods=20,freq='T',days = 7):
-    '''
-    help fun to produce time sequence
-    '''
-    seq = pd.date_range(start=start,periods=periods,freq=freq)
-    seq1 = seq
-    for day in  range(days-1):
-        seq = seq + Day()
-        seq1 += seq
-    return seq1
-
-def next_20min(seq, m=20):
-    '''
-    add constant time to seq
-    '''
-    return seq + Minute(m)
-
-def plot_pred(pred,y_true):
-    '''
-    input :pred,true
-    datashape : [[1,2],[1,2]]
-    
-    '''    
-    plt.plot(pred[:,0].flatten(),'blue')
-    plt.plot(y_true[:,0].flatten(),'*')
-    plt.show()
-    
-
-def next_seq(seq,offset="20Min"):
-    return seq  + Minute(offset)
-    
-###############################################################################
-def pre_train(freq = '20Min'):
-    df,train_seq,test_seq = gen_df(freq,normalize = False,test=False)
-    tolls = df.groupby('tollgate_id')
-    for t,tgroup in tolls:
-        ds = tgroup.groupby('direction')
-        for d,dgroup in ds:
-            dgroup.loc[:,'day'] = dgroup['time_window_s'].dt.dayofyear
-            days = dgroup.groupby('day')
-            for day,group in days:
-                group = group.set_index('time_window_s')['volume']
-                param = ''.join([str(t),'-',str(d),'-',str(day)])
-                print('pre train param for ',param)
-                pqr = ARIMA_predictBynum(group,[0,1,0])
-                GLOBAL[param] = pqr
-    cache(GLOBAL)
-		
-def train(GLOBAL,freq = '20Min',tollgate_id = 1):
-    '''
-    主要的内容是:数据按照时间分割,送入ARIMA训练,得到结果1
-	      整合结果1,送入BPNN训练,得到训练好的网络
-         输出:每个tollgate一个模型
-    '''
-    df,train_seq,test_seq = gen_df(freq,normalize = False,test=False)
-    df.loc[:,'day'] = df['time_window_s'].dt.dayofyear
-    train_seq1 = train_seq.copy()
-    tolls = df.groupby('tollgate_id')
-    outputlist = []
-    for t,tgroup in tolls:
-        ds = tgroup.groupby('direction')
-        for d,dgroup in ds:
-            patts = dgroup.groupby('pattern')
-            for pat,group in patts:
-                #需要修改时间序列.分为两个部分,9.17-9.30 & 10.8-10.17 and 10.1-10.7
-                #每个tollgate.每个方向的ts
-                group = group.set_index('time_window_s')['volume']
-                #group = group.rolling(72).mean()
-                day = train_seq.dayofyear#分割训练序列标志
-                param = ''.join([str(t),'-',str(d),'-',str(day[0])])
-                print('ARIMA模型,训练X天的数据,默认时间序列周期为一天,通过建立模型,得到下一天的输出,放到BP中训练')
-                pqr = [1,1,1]
-#                print(param,pqr)
-                step = len(train_seq)
-                step = 72
-                print(pd.isnull(group[train_seq]).sum())
-                if len(group[train_seq]) != len(train_seq) and pd.isnull(group[train_seq]).sum()>0:
-                    print('数据不完整')
-                    sys.exit()
-                output,pqr = arima(group,t,d,train_seq,step,pqr)
-                
-                outputlist.append(output)
-                print('mse is ',np.mean((output['pred']-output['volume'])**2))
-                
-                plot_compare(output['volume'],output['pred'],0)
-                
-                
-                train_seq = train_seq.shift(len(train_seq))
-                print('next train seq is ',train_seq[0],train_seq[-1])
-            
-            param = ''.join([str(t),str(i)])
-            GLOBAL[param] = str(day[0])
-                
-        output = pd.concat(outputlist)
-        output.to_csv(''.join([train_f,'//',str(t),'_',str(day[0]),'.csv']),index=False)
-#        print(output)
-    #add weather param
-    output = pd.concat(outputlist)
-    print(len(output))
-    output = output.set_index(['tollgate_id','direction','time_window_s'])
-#    print(output.loc[:,'pred'])
-    print(len(output))
-    batch_x  = df.set_index(['tollgate_id','direction','time_window_s'])
-    batch_x = batch_x.join(output['pred']).dropna()
-#    print(batch_x)
-    #normalize
-    batch_x.loc[:,'residual'] = batch_x.loc[:,'volume'] - batch_x.loc[:,'pred']#添加残差
-    batch_x.loc[:,'pred'] = np.log(batch_x.loc[:,'pred'])
-    batch_x.loc[:,'volume'] = np.log(batch_x.loc[:,'volume'])
-    
-    batch_x.to_csv(''.join(['total',r'_arima_bp_log.csv']),index=True)
-    f = open('dump_param.pkl','wb')
-    pickle.dump(GLOBAL,f)
-    f.close()
-#    GLOBAL = cache(GLOBAL)
-def bp_train():
-    batch_x = pd.read_csv('total_arima_bp_log.csv')
-    batch_x.loc[:,'time_window_s']=pd.to_datetime(batch_x['time_window_s'],format=r'%Y/%m/%d %H:%M:%S')
-
-    x_data = np.array(batch_x[['pressure','sea_pressure','wind_direction','wind_speed',
-                                'temperature','rel_humidity','precipitation',
-                                'dayofweek','hour','minute','direction','pattern']])
-    if np.any(np.isnan(x_data)):
-        print('nan found ')
-        sys.exit(0)
-    y_data = np.array(batch_x.loc[:,'residual'])#修改为残差
-    y_data = y_data.reshape((len(y_data),1))
-#    print(x_data)
-#    print(y_data)
-    
-    #begin bp train
-    bp = bp_net()
-    N,D = x_data.shape
-    K = len(y_data[0])
-    bp.middle = 150
-    bp.modelname = str(tollgate_id)
-    bp.training_iters = 25000
-    bp.build(D,K)
-    bp.fit(x_data,y_data,x_data,y_data)
-#    print(train_seq)
-    print('train',x_data.shape,y_data.shape)
-    print('train seq ',train_seq[0],train_seq[-1])
-    print('test seq',test_seq[0],test_seq[-1])
-    
-    
-def test(freq = '20Min',tollgate_id = 1):
-    '''
-    model test
-    output result
-    '''
-    result = []
-    periods = 72
-    df,train_seq,test_seq = gen_df(freq,normalize=False,test=False,pat=True,periods=periods)
-    true = df[df['tollgate_id']==tollgate_id].set_index(['tollgate_id','direction','time_window_s'])
-    
-    #add ARIMA process
-    print('训练时间段向前推')
-    train_seq = pd.date_range(start = (test_seq[0]-Minute(20*periods)),periods=len(test_seq),freq='20Min')
-    al_dir = []
-    for direction,group in df[df['tollgate_id']==tollgate_id].groupby('direction'):
-        arima_x = group.set_index(['time_window_s'])['volume'][train_seq]
-        print('arima_x couting number of zero', len(arima_x[arima_x==0]))
-        from time_series_analysis_p1 import main_1 as arima
-        #output tollgate_id,direction time_window_s,pred,volume
-        param_name = ''.join([str(tollgate_id),'-',str(direction),'-',str(train_seq[0].dayofyear)])
-        pqr = GLOBAL[param_name]
-        output = arima(arima_x,tollgate_id,direction,train_seq,len(test_seq),pqr)
-        output = output.set_index(['tollgate_id','direction','time_window_s'])
-        al_dir.append(output)
-
-    true = pd.concat(al_dir)
-    true.to_csv(''.join([str(tollgate_id),'-','arima_tmp.csv']))
-    
-    true.loc[:,'residual'] = true.loc[:,'volume'] - true.loc[:,'pred']#添加残差
-    true.loc[:,'volume'] = np.log(true.loc[:,'volume'])
-    true.loc[:,'pred'] = np.log(true.loc[:,'pred'])
-    
-    #模型训练了一天的这个时间段，看看能够预测多少天的数据
-    for i in range(1):
-        if i>0:
-            test_seq = test_seq + DateOffset(days=1)
-        #struct batch
-        print(true)
-#        sys.exit(0)
-        x_data = np.array(true[['pressure','sea_pressure','wind_direction','wind_speed',
-                                    'temperature','rel_humidity','precipitation',
-                                    'dayofweek','hour','minute','direction','pattern','pred']])
-        if np.any(np.isnan(x_data)):
-            print('nan found ')
-            sys.exit(0)
-        y_data = np.array(true.loc[:,'residual'])
-        y_data = y_data.reshape((len(y_data),1))
-        print(x_data)
-        print('test seq is',test_seq[0],test_seq[-1],test_seq[0].dayofweek)
-        
-        #begin test this model
-        model = bp_net()
-        pred = model.predict(x_data)
-        print(np.sum(pred,axis=0))
-        print(np.sum(y_data,axis=0))
-        print(len(test_seq),pred.shape,y_data.shape)
-        
-        #plot pred and true data
-        plot_pred(pred,y_data)
-        print('mse is ',np.mean((pred-y_data)**2))
-        temp = np.concatenate((y_data,pred),axis = 1)
-        print(temp)
-        print(temp.shape)
-        
-        temp = pd.DataFrame(temp,columns=['volume','pred'],index=test_seq)
-        result.append(temp)
-
-    df = pd.concat(result)
-    df.to_csv(''.join([str(tollgate_id),'model_pre.csv']))
-    
-def next_train(freq = 'T'):
-    df,train_seq,test_seq = gen_df(freq)
-    train_seq = next_20min(train_seq,m=20)
-    test_seq = next_20min(test_seq,m=20)
-    
-    batch_x,batch_y = get_all_batch(df,train_seq,k=1)
-    x_data = np.array(batch_x)
-    if np.any(np.isnan(x_data)):
-        print('nan found ')
-        sys.exit(0)
-    y_data = np.array(batch_y)
-    
-    test_x,test_y = get_all_batch(df,test_seq,k=1)
-    test_x = np.array(test_x)
-    test_y = np.array(test_y)    
-    
-    
-    #begin next train 20minute
-    model = bp_net()
-    model.training_iters = 500
-    model.train1(x_data,y_data,test_x,test_y)
-        
-def next_test(freq = '20Min'):
-    df,train_seq,test_seq = gen_df(freq)
-    train_seq = next_20min(train_seq,m=20)
-    test_seq = next_20min(test_seq,m=20)
-    #模型训练了一天的这个时间段，看看能够预测多少天的数据
-    for i in range(15):
-        test_seq = test_seq + DateOffset(days=1)
-        print(test_seq[0])
-        batch_x,batch_y = get_all_batch(df,test_seq,k=1)
-        batch_x = np.array(batch_x)
-        batch_y = np.array(batch_y)
-        
-        #begin test this model
-        model = bp_net()
-        pred = model.predict(batch_x)
-        print(np.sum(pred,axis=0))
-        print(np.sum(batch_y,axis=0))        
-        
-        
-        
-        
-        
-        
-def cache(config,fdir='global_config.txt'):
-    if os.path.isfile(fdir):
-        f = open(fdir,'r')
-        config = json.load(f)
-        f.close()
-        return config
-    else:
-        f = open(fdir,'w')
-#        json.dump(config,f)
-        f.close()
-        return config
-
-GLOBAL = {}
-train_f = '../train'
-if __name__ == '__main__':
-#    GLOBAL = cache(GLOBAL)
-#    print(GLOBAL)
-    train(GLOBAL,freq='20Min',tollgate_id=1)
-#    test(freq='20Min',tollgate_id=1)
-
-
-
-
-
-
-    '''
-    输入点为当前时间t
-    输出为需要预测的时间t+T
-    
-    所以预测8：20的流量 ，需要将时间点设置为8:00
-    
-    '''
