@@ -283,15 +283,14 @@ class model1:
 def modification(ts , method=2):
     step = 1
     #规则
-    if len(ts[ts>1000]):
-        if ts.mean() > 1000:
+    if len(ts[ts>500]):
+        if ts.mean() > 500:
             print(ts.describe())
-            ts[ts>1000] = abs(ts-ts.median())/ts.mad()
-            print(ts)
-            if len(ts[ts>1000]):
+            ts[ts>500] = abs(ts-ts.median())/ts.mad()
+            if len(ts[ts>500]):
                 sys.exit('ts>1000')
         else:
-            ts[ts>1000] = ts.mean()
+            ts[ts>500] = ts.mean()
     print(ts)
     print(ts.describe())
     #参考 ： 东方金工《选股因子数据的异常值处理和正态转换》
@@ -306,7 +305,7 @@ def modification(ts , method=2):
     q3 = ts.quantile(0.75)
     median = ts.median()
     IQR=q3-q1
-    if mc > 0:
+    if mc >= 0:
         l = q1 - 1.5*np.exp(-3.5*mc)*IQR
         u = q3 + 1.5*np.exp(mc)*IQR
     if mc < 0:
@@ -321,9 +320,9 @@ def modification(ts , method=2):
             print ('modi ',ts1.describe())
             ts1[ts1>ts1.std()*3] = ts1.std()*3
     if method == 2:
-        while len(ts1[abs(ts1-median)/ts.mad() >2]) > 0 and step <10:
+        while len(ts1[abs(ts1-median)/ts.mad() >3]) > 0 and step <10:
             print ('modi ',ts1.describe())
-            ts1[abs(ts1-median)/ts.mad() >2] = abs(ts1-median)/ts.mad() # 剔除偏离中位数x倍以上的数据
+            ts1[abs(ts1-median)/ts.mad() >3] = abs(ts1-median)/ts.mad() # 剔除偏离中位数x倍以上的数据
             step += 1
     if method == 3:
         while len(ts1[ts1<l]) > 0 and len(ts1[ts1>u]) > 0:
@@ -384,4 +383,4 @@ def main():
     
 if __name__ == '__main__':
     this = ''
-#    main()
+    main()

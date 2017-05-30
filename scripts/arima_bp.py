@@ -131,7 +131,7 @@ class bp_net:
                         training_iters += 5000
                 step += 1
             # 如果准确率大于50%,保存模型,完成训练
-            self.saver.save(self.session,save_path=os.path.join(self.modeldir,self.modelname), global_step=step)
+            self.saver.save(self.session,save_path=os.path.join(self.modeldir,self.modelname), global_step=self.training_iters)
             #test
             pred = self.session.run(a_2 , feed_dict={self.x:Xtest})
             print(pred)
