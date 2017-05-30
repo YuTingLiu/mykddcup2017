@@ -161,14 +161,22 @@ def plot_residual(df_log):
 
 
     
-def plot_compare(src,trans,window):
+def plot_compare(src,trains,patt=0):
     figure(1)
-    if src is not None:
-        plt.plot(src)
-    if trans is not None:
-        plt.plot(trans,color='red')
-    plt.show(block=False)
-    plt.savefig(r'output.png')
+    x = src.index
+    if patt==0:
+        if src is not None:
+            plt.plot(x,src)
+        if trains is not None:
+            plt.plot(x,trains,color='red')
+        plt.show(block=False)
+        plt.savefig(r'output.png')
+    else:
+        plt.scatter(x,src,color='g',marker = 'o')
+        plt.scatter(x,trains,color='red',marker = 'o')
+        plt.show(block=False)
+        plt.savefig(r'output.png')
+        
 ##    ts_log_moving_avg_diff = src-trans
 ##    ts_log_moving_avg_diff.dropna(inplace=True)
 ##    temp = test_stationarity(df_log_diff,x)

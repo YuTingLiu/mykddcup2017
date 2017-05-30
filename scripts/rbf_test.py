@@ -242,69 +242,11 @@ class rbf_net:
     
     def score(self ,_X,_Y):
         return 1-error_rate(self.predict(_X),_Y)
-################################################################################    
-    
-def gen_df(freq='T',normalize = False):
-    '''
-    help fun
-    '''
-    if freq is '20Min':
-        df = load_volume(fdir='training_20min_avg_volume.csv')
-        train_seq = produce_seq(start='09/19/2016 00:20',periods=6,freq='20Min',days = 1)
-        test_seq = produce_seq(start='09/19/2016 00:20',periods=6,freq='20Min',days = 1)
-        df = prep(df,pat=True,normalize=normalize)
-    elif freq is 'T':
-        in_file=r'E:\大数据实践\天池大赛KDD CUP\data\dataSets\training\volume(table 6)_training.csv'
-        model = model1()
-        df = model.load_volume_hour(fdir=in_file)
-        train_seq = produce_seq(start='09/19/2016 00:20',periods=20,freq='T',days = 7)
-        test_seq = produce_seq(start='09/26/2016 00:20',periods=20,freq='T',days = 1)
-        df = prep(df,pat=True,normalize=normalize)
-    else:
-        sys.exit(0)
-    return df,train_seq,test_seq
 
-
-def produce_seq(start='09/19/2016 00:20',periods=20,freq='T',days = 7):
-    '''
-    help fun to produce time sequence
-    '''
-    seq = pd.date_range(start=start,periods=periods,freq=freq)
-    seq1 = seq
-    for day in  range(days):
-        seq = seq + Day()
-        seq1 += seq
-    return seq1
-
-def next_20min(seq, m=20):
-    '''
-    add constant time to seq
-    '''
-    return seq + Minute(m)
-
-def plot_pred(pred,y_true):
-    '''
-    input :pred,true
-    datashape : [[1,2],[1,2]]
-    
-    '''    
-    pred = np.exp(pred)
-    y_true = np.exp(y_true)
-    print(pred.shape)
-    print(pred[:,0])
-    print(pred[:,0].flatten().shape)
-    plt.plot(pred[:,0].flatten(),'blue')
-    plt.plot(pred[:,1].flatten(),'red')
-    plt.plot(y_true[:,0].flatten(),'*')
-    plt.plot(y_true[:,1].flatten(),'+')
-    plt.show()
-    
-    
     
 ###############################################################################
-def train(freq = '20Min'):
-    df,train_seq,test_seq = gen_df(freq)
-    
+def train(freq = '20Min',test_size=12):    
+    df,train_seq = gen_df(freq)
     batch_x,batch_y = get_all_batch(df,train_seq,k=1)
     x_data = np.array(batch_x)
     if np.any(np.isnan(x_data)):
@@ -312,9 +254,11 @@ def train(freq = '20Min'):
         sys.exit(0)
     y_data = np.array(batch_y)
     
-    test_x,test_y = get_all_batch(df,test_seq,k=1)
-    test_x = np.array(test_x)
-    test_y = np.array(test_y)    
+    train_size = len(x_data)-test_size
+    X = x_data[:train_size]
+    y = y_data[:train_size]
+    test_x = x_data[train_size:]
+    test_y = x_data[train_size:] 
     
     #begin bp train
     bp = bp_net()
@@ -392,7 +336,7 @@ def next_test(freq = '20Min'):
 if __name__ == '__main__':
 #    train(freq='T')
 #    test(freq='T')
-#    train(freq='20Min')
+    train(freq='20Min')
     test(freq='20Min')
 #    next_train(freq='T')
 #    next_test(freq='T')

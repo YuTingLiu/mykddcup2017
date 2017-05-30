@@ -24,107 +24,55 @@ import pickle
 from arima_bp import bp_net
 from rbf_test import rbf_net
 from time_series_analysis_p1 import *
+from time_series_analysis_p2 import *
 
-def gen_df(start='10/8/2016 06:00',freq='T',normalize = False,test = False,pat = False,periods=72):
-    '''
-    help fun
-    '''
-    if freq is '20Min':
-        df = load_volume(fdir='train_union1.csv')
-        train_seq = produce_seq(start=start,periods=periods,freq='20Min',days = 7)
-        if len(train_seq) != 72*20:
-            print('train_seq len ',len(train_seq))
-#            sys.exit()
-        if test is True:
-            df = load_test(fdir='test_union1.csv')
-            test_seq = produce_seq(start=start,periods=periods,freq='20Min',days = 6)
-            df = prep(df,pat=pat,normalize=normalize)
-        else:
-            test_seq = produce_seq(start='10/16/2016 06:00',periods=periods,freq='20Min',days = 1)
-            df = prep(df,pat=pat,normalize=normalize)
-    else:
-        sys.exit(0)
-#    print(df)
-    return df,train_seq,test_seq
-
-def gen_test(start='10/18/2016 08:00',freq='T',normalize = False,test = True,pat = False,periods=6):
-    
-    test_seq = produce_seq(start=start,periods=periods,freq='20Min',days = 7)
-    return test_seq
-    
-def produce_seq(start='09/19/2016 00:20',periods=20,freq='T',days = 7):
-    '''
-    help fun to produce time sequence
-    '''
-    seq = pd.date_range(start=start,periods=periods,freq=freq)
-    seq1 = seq
-    for day in  range(days-1):
-        seq = seq + Day()
-        seq1 += seq
-    return seq1
-
-def next_20min(seq, m=20):
-    '''
-    add constant time to seq
-    '''
-    return seq + Minute(m)
-
-def plot_pred(pred,y_true):
-    '''
-    input :pred,true
-    datashape : [[1,2],[1,2]]
-    
-    '''    
-    plt.plot(pred[:,0].flatten(),'blue')
-    plt.plot(y_true[:,0].flatten(),'*')
-    plt.show()
-    
-
-def next_seq(seq,offset="20Min"):
-    return seq  + Minute(offset)
-    
+def load(fdir='volume_union.csv',start='10/8/2016 06:00',freq='T',normalize = False,pat = False,periods=72,days=7):
+    return gen_df(fdir=fdir,start=start,normalize = normalize,pat = pat,periods=periods,days=days)
 		
-def train(GLOBAL,start='10/8/2016 06:00',freq = '20Min',tollgate = 1):
+def train(GLOBAL,start='10/8/2016 06:00',freq = '20Min',p=10,q=4,days=7,periods=12):
     '''
     主要的内容是:数据按照时间分割,送入ARIMA训练,得到结果1
 	      整合结果1,送入BPNN训练,得到训练好的网络
          输出:每个tollgate一个模型
     '''
-    df,train_seq,test_seq = gen_df(start=start,freq=freq,normalize = False,test=False,periods=12)
+    df,train_seq = load(start=start,freq=freq,normalize = False,periods=periods,days=days,pat=False)
 
     df.loc[:,'day'] = df['time_window_s'].dt.dayofyear
-    tolls = df.groupby('tollgate')
+    inter = df.groupby('tollgate')
     outputlist = []
-    for t,tgroup in tolls:
+    for t,tgroup in inter:
         ds = tgroup.groupby('direction')
-        
-        train_seq1 = train_seq.copy()
         for d,dgroup in ds:
-            if t==2 and d==1:
-                continue
             group = dgroup.set_index('time_window_s')[['volume']]
+            group = group.rolling(12).mean()
 #            data_check()
-            print('ARIMA模型,训练X天的数据,默认时间序列周期为一天,通过建立模型,保存模型')
-            print('time seq',train_seq1[0],train_seq1[-1])
+
+            print('time seq',train_seq[0],train_seq[-1])
 #            sys.exit()
-            for i in range(1):
-                day = train_seq1.day[0]
-                hour = train_seq1.hour[0]
-                ts = group.loc[train_seq1,:]
-                from time_series_analysis_p2 import run_aram
-                model,MRSE,pred,diffn = run_aram(ts,1,1)
-                param = ''.join([str(t),str(d),str(hour)])
-                GLOBAL[param] = str(diffn)
-                f = open(''.join([r'../arima','//',str(t),str(d),str(hour),'-',str(diffn)]),'wb')
-                pickle.dump(model,f)
-                f.close()
-                #还原
-                ts.loc[:,'pred'] = pred
-                plot_compare(ts['volume'],ts['pred'],0)
-                ts.loc[:,'direction'] = d
-                ts.loc[:,'tollgate'] = t
-                ts.index.name = 'time_window_s'
-                outputlist.append(ts)
+            day = train_seq.day[0]
+            hour = train_seq.hour[0]
+            ts = group.loc[train_seq,:]
+            param = ''.join([str(t),str(d),str(hour)])
+            while np.any(pd.isnull(ts)):
+                print(param,'train nan')
+                print(ts[pd.isnull(ts)])
+                sys.exit()
+            print(param,'ARIMA模型,训练X天的数据,默认时间序列周期为一天,通过建立模型,保存模型')
+            
+            model = ARIMA_V1(name=param)
+            model.build(maxar=p,maxma=q,maxdiff=6,test_size=3,save_path=arima_path)
+            pred = model.train(ts)
+            GLOBAL[param] = str(model.diffn)
+            model.save_model()
+            
+            #还原
+            ts.loc[:,'pred'] = pred
+            plot_compare(ts['volume'],ts['pred'],0)
+#            sys.exit()
+            ts.loc[:,'direction'] = d
+            ts.loc[:,'tollgate'] = t
+            ts.index.name = 'time_window_s'
+            outputlist.append(ts)
 #        sys.exit(0)
     output = pd.concat(outputlist)
     output.to_csv('output1.csv')
@@ -134,14 +82,14 @@ def train(GLOBAL,start='10/8/2016 06:00',freq = '20Min',tollgate = 1):
     return GLOBAL,df
 #        sys.exit(0)
 
-def arima_pred(GLOBAL,start='10/18/2016 06:00',freq = '20Min',tollgate = 1):
+def arima_pred(GLOBAL,start='10/18/2016 06:00',freq = '20Min',periods=6,days=7):
     '''
     '''
-    print(GLOBAL)
 #    sys.exit()
-    outputlist=[]
-    df,train_seq,test_seq = gen_df(start=start,freq=freq,normalize = False,test=True,periods=12,pat=False)
-    _,_,seq = gen_df(start=start,freq=freq,normalize = False,test=True,periods=6,pat=False)
+    pred2hour=[]
+    pred4hour=[]
+    df,train_seq = load(start=start,freq=freq,normalize = False,periods=12,days=days)
+    _,seq = load(start=start,freq=freq,normalize = False,periods=6,pat=False,days=days)
     seq = seq + Hour(2)
     df.loc[:,'day'] = df['time_window_s'].dt.dayofyear
     print(df.head())
@@ -149,79 +97,210 @@ def arima_pred(GLOBAL,start='10/18/2016 06:00',freq = '20Min',tollgate = 1):
     for t,tgroup in tolls:
         ds = tgroup.groupby('direction')
         for d,dgroup in ds:
-            if t==2 and d==1:
-                continue
-            group = dgroup.set_index('time_window_s')[['volume']]
-            ts = group.loc[test_seq,:]
+            group = dgroup.set_index('time_window_s')
+            ts = group.loc[train_seq,:]
+            print('predict step ',len(ts))
             hour = train_seq.hour[0]
             param = ''.join([str(t),str(d),str(hour)])
             diffn = GLOBAL[param]
-            f = open(''.join([r'../arima','//',str(t),str(d),str(hour),'-',str(diffn)]),'rb')
-            model = pickle.load(f)
-            f.close()
-            print(model)
-            pred = model.predict(len(ts))
-            print(len(test_seq))
+            
+            model = ARIMA_V1(name=param)
+            model.build(save_path=arima_path)
+            model.diffn = diffn
+            pred = model.predict(load=True,step=len(ts))
+            
+            print(len(train_seq))
             print(len(pred))
             print(len(ts))
-#            print(pred)
-            from time_series_analysis_p2 import predict_recover
             df = predict_recover(pred,ts['volume'],0)
 #            print(df)
             temp = pd.Series(data=df['Series'].values,index=ts.index)
             ts.loc[:,'pred'] = temp
-            ts.loc[:,'tollgate'] = t
             ts.loc[:,'direction'] = d
+            ts.loc[:,'tollgate'] = t
             ts.loc[:,'time_window_e'] = ts.index + Minute(20)
             ts.index.name = 'time_window_s'
 #            plot_compare(ts['volume'],ts['pred'],0)
             print(ts.loc[seq,:].head(12))
 #            sys.exit()
-            outputlist.append(ts.loc[seq,:])
-    df = pd.concat(outputlist)
-    df.to_csv(r'pred_finnal.csv')
-    return df
-               
-def bp_train(tollgate=1):
-    _,train_seq,test_seq = gen_df(freq,normalize = False,test=False,periods=12)
-    df = pd.read_csv('total_arima_bp_log1.csv')
+            pred4hour.append(ts)
+            pred2hour.append(ts.loc[seq,:])
+            
+    return pd.concat(pred4hour),pd.concat(pred2hour)
+    
+def bp_train(fdir='volume_total.csv',start='10/18/2016 06:00',test_size=12,freq='20Min',days=7):
+    _,train_seq = load(start=start,freq=freq,normalize = False,periods=12,days=days,pat=False)
+    df = pd.read_csv(fdir)
     df.loc[:,'time_window_s']=pd.to_datetime(df['time_window_s'],format=r'%Y/%m/%d %H:%M:%S')
-    df.loc[:,'residual'] = df['volume']-df['pred']
-#    df.loc[:,'residual'] = np.log(df['volume'])-np.log(df['pred'])
-    df.to_csv(r'bp.csv',index=False)
-    batch_x = df[pd.notnull(df['pred'])]
-    print(batch_x)
-    batch_x = batch_x[batch_x['tollgate']==tollgate]
-    x_data = np.array(batch_x[['pressure','wind_direction','wind_speed',
+    df.loc[:,'residual'] = np.log(df['volume'])-np.log(df['pred'])
+#    df.loc[:,'residual'] = df.loc[:,'residual'].rolling(12).mean().values
+#    train_seq = train_seq[12:]
+    hour = train_seq.hour[0]#param
+#    df.to_csv(r'bp.csv',index=False)
+    df = df[pd.notnull(df['pred'])]
+    inter = df.groupby('tollgate')
+    for t,tgroup in inter:
+        ds = tgroup.groupby('direction')
+        for d,dgroup in ds:
+            batch_x = dgroup.set_index('time_window_s').loc[train_seq,:]
+            while np.any(pd.isnull(batch_x)):
+                print('nan found ',t,'',d)
+                print(batch_x[pd.isnull(batch_x)])
+                print(len(batch_x[pd.isnull(batch_x)]))
+                sys.exit()
+                
+            x_data = np.array(batch_x[['pressure','wind_direction','wind_speed',
                                 'temperature','rel_humidity','precipitation',
-                                'dayofweek','hour','minute','direction','pattern']])
+                                'dayofweek','hour','minute','pattern']])
 #    x_data = np.array(batch_x[['pressure','sea_pressure','wind_direction','wind_speed',
 #                                'temperature','rel_humidity','precipitation',
 #                                'dayofweek','hour','minute','direction','pattern']])
-    if np.sum(np.isnan(x_data)) > 0:
-        print('nan found ')
-        sys.exit(0)
-    y_data = np.array(batch_x.loc[:,'residual'])#修改为残差
-    y_data = y_data.reshape((len(y_data),1))
-#    print(x_data)
-#    print(y_data)
+            y_data = np.array(batch_x.loc[:,'residual'])#修改为残差
+            y_data = y_data.reshape((len(y_data),1))
     
-    #begin bp train
-    bp = bp_net()
-    N,D = x_data.shape
-    K = len(y_data[0])
-    bp.middle = 30
-    bp.modelname = str(tollgate)
-    bp.training_iters = 25000
-    bp.build(D,K)
-    bp.fit(x_data,y_data,x_data,y_data)
-#    print(train_seq)
-    print('train',x_data.shape,y_data.shape)
-    print('train seq ',train_seq[0],train_seq[-1])
-    print('test seq',test_seq[0],test_seq[-1])
-                    
+            train_size = len(x_data)-int(test_size)
+            X=x_data[:train_size]
+            Y=y_data[:train_size]
+            Xtest=x_data[train_size:]
+            Ytest=y_data[train_size:]
+            
+            #begin bp train
+            bp = bp_net()
+            N,D = x_data.shape
+            K = len(y_data[0])
+            bp.middle = 60
+            bp.modelname = ''.join([str(t),str(d),str(hour)])
+            bp.training_iters = bp_train_iter
+            bp.build(D,K)
+            bp.fit(X,Y,Xtest,Ytest)
+        #    print(train_seq)
+            print('train',X.shape,Y.shape)
+            print('train seq ',train_seq[0],train_seq[-1])
+            
+def bp_test(fdir='volume_total.csv',start='10/18/2016 06:00',freq='20Min',predict=False,test=False,days=7,periods=6): 
+    
+    outputlist = []
+    
+    _,train_seq = load(start=start,freq=freq,normalize = False,periods=periods,days=days)
+    df = pd.read_csv(fdir)
+        
+    df.loc[:,'time_window_s']=pd.to_datetime(df['time_window_s'],format=r'%Y/%m/%d %H:%M:%S')
+#    df.loc[:,'residual'] = df['travel_time']-df['pred']
+    df.loc[:,'residual'] = np.log(df['volume'])-np.log(df['pred'])
+#    df.to_csv(r'bp.csv',index=False)
+    hour = train_seq.hour[0]
+    if predict:
+        train_seq = train_seq + Hour(2)
+    print('test seq ',train_seq[0],train_seq[-1])
+    df = df[pd.notnull(df['pred'])]
+    inter = df.groupby('tollgate')
+    for t,tgroup in inter:
+        ds = tgroup.groupby('direction')
+        for d,dgroup in ds:
+            batch_x = dgroup.set_index('time_window_s')
+            batch_x = batch_x.loc[train_seq,:]
+            while np.any(pd.isnull(batch_x)):
+                print('由于nan found ',t,'',d)
+                batch_x = batch_x.bfill()
+                batch_x = batch_x.ffill()
+                
+            x_data = np.array(batch_x[['pressure','wind_direction','wind_speed',
+                                'temperature','rel_humidity','precipitation',
+                                'dayofweek','hour','minute','pattern']])
+#    x_data = np.array(batch_x[['pressure','sea_pressure','wind_direction','wind_speed',
+#                                'temperature','rel_humidity','precipitation',
+#                                'dayofweek','hour','minute','direction','pattern']])
+            y_data = np.array(batch_x.loc[:,'residual'])#修改为残差
+            y_data = y_data.reshape((len(y_data),1))
+            X=x_data
+            batch_y=y_data
+            #begin bp test
+            bp = bp_net()
+            bp.modelname = ''.join([str(t),str(d),str(hour)])
+            bp.training_iters = bp_train_iter
+            pred = bp.predict(X)
+            print(np.sum(pred,axis=0))
+            print(np.sum(batch_y,axis=0))
+            #预测结束后
+            print('pred length',len(pred))
+            print('true length ',len(batch_y))
+            pred = pd.Series(data=np.array(pred).flatten(),index = train_seq)
+            
+            batch_x.loc[:,'residual'] = pred
+            batch_x.loc[:,'bp'] = np.exp((batch_x['residual']+np.log(batch_x['pred'])))
+            outputlist.append(batch_x)
+    print('ouputlist',len(outputlist))
+    df = pd.concat(outputlist)
+    df.index.name = 'time_window_s'
+    return df
+def bp_next_train(fdir='volume_total.csv',start='10/18/2016 06:00',test_size=12,freq='20Min',days=7):
+    
+    outputlist = []
+    
+    _,train_seq = load(start=start,freq=freq,normalize = False,periods=6,days=days,pat=False)
+    df = pd.read_csv(fdir)
+    df.loc[:,'time_window_s']=pd.to_datetime(df.loc[:,'time_window_s'],format=r'%Y/%m/%d %H:%M:%S')
+    df.loc[:,'residual'] = np.log(df['volume'])-np.log(df['pred'])
+    
+    hour = train_seq.hour[0]#param
+#    df.to_csv(r'bp.csv',index=False)
+    df = df[pd.notnull(df['pred'])]
+    inter = df.groupby('tollgate')
+    for t,tgroup in inter:
+        ds = tgroup.groupby('direction')
+        for d,dgroup in ds:
+            batch_x = dgroup.set_index('time_window_s').loc[train_seq,:]
+            while np.any(pd.isnull(batch_x)):
+                print('nan found ',t,'',d)
+                print(batch_x[pd.isnull(batch_x)])
+                print(len(batch_x[pd.isnull(batch_x)]))
+                batch_x = batch_x.bfill()
+                batch_x = batch_x.ffill()
+                
+            x_data = np.array(batch_x[['pressure','wind_direction','wind_speed',
+                                'temperature','rel_humidity','precipitation',
+                                'dayofweek','hour','minute','pattern']])
+#    x_data = np.array(batch_x[['pressure','sea_pressure','wind_direction','wind_speed',
+#                                'temperature','rel_humidity','precipitation',
+#                                'dayofweek','hour','minute','direction','pattern']])
+            y_data = np.array(batch_x.loc[:,'residual'])#修改为残差
+            y_data = y_data.reshape((len(y_data),1))
+    
+            train_size = len(x_data)-int(test_size)
+            X=x_data[:train_size]
+            Y=y_data[:train_size]
+            Xtest=x_data[train_size:]
+            Ytest=y_data[train_size:]
+            
+            #begin bp train
+            bp = bp_net()
+            N,D = x_data.shape
+            K = len(y_data[0])
+            bp.middle = 60
+            bp.modelname = ''.join([str(t),str(d),str(hour)])
+            bp.training_iters = bp_train_iter
+            bp.train1(X,Y,Xtest,Ytest)
+        #    print(train_seq)
+            print('train',X.shape,Y.shape)
+            print('train seq ',train_seq[0],train_seq[-1])   
+            
+            pred = bp.predict(x_data)
+            print(np.sum(pred,axis=0))
+            print(np.sum(y_data,axis=0))
+            #预测结束后
+            print('pred length',len(pred))
+            print('true length ',len(y_data))
+            pred = pd.Series(data=np.array(pred).flatten(),index = train_seq)
+            
+            batch_x.loc[:,'residual'] = pred
+            batch_x.loc[:,'bp'] = np.exp((batch_x['residual']+np.log(batch_x['pred'])))
+            outputlist.append(batch_x)
+    print('ouputlist',len(outputlist))
+    df = pd.concat(outputlist)
+    df.index.name = 'time_window_s'
+    return df
 def rbf_train(tollgate=1):
-    _,train_seq,test_seq = gen_df(freq,normalize = False,test=False)
+    _,train_seq = load(freq,normalize = False)
     df = pd.read_csv('total_arima_bp_log.csv')
     df.loc[:,'time_window_s']=pd.to_datetime(df['time_window_s'],format=r'%Y/%m/%d %H:%M:%S')
     df.loc[:,'residual'] = np.log(df['volume'])-np.log(df['pred'])
@@ -253,8 +332,71 @@ def rbf_train(tollgate=1):
     print('train seq ',train_seq[0],train_seq[-1])
     print('test seq',test_seq[0],test_seq[-1])
 
+def evalute(df,start='10/18/2016 06:00',freq = '20Min',predict=False,days=7):
+    '''
+    主要的内容是:数据按照时间分割,送入ARIMA训练,得到结果1
+	      整合结果1,送入BPNN训练,得到训练好的网络
+         输出:每个tollgate一个模型
+    '''
+    
+    bp_result = []
+    arima_result=[]
+    
+    origin,train_seq = load(start=start,freq=freq,normalize = False,periods=6,days=days)
+    if predict:
+        train_seq = train_seq + Hour(2)
+    #生成这个时间段上的前1天序列
+    plot_seq = pd.date_range(start=train_seq[0]-Day(1)-Hour(2),freq=freq,periods=12)
+    plot_seq = plot_seq + train_seq
+    inter = df.groupby('tollgate')
+    for t,tgroup in inter:
+        ds = tgroup.groupby('direction')
+        for d,dgroup in ds:
+            #计算MAPE
+            import MAPE
+            group = dgroup.set_index('time_window_s')[['volume','bp','pred']].loc[train_seq,:]
+            plot_group = origin[(origin['tollgate']==t) & (origin['direction']==d)]
+            plot_group = plot_group.set_index('time_window_s')[['volume']].loc[plot_seq,:]
+            plot_group.loc[:,'bp'] = group['bp']
+            plot_group.loc[:,'pred'] = group['pred']
+            bp_result.append(MAPE.mape(group))
+            #plot
+#            print(plot_group)
+#            sys.exit()
+            plot_compare(plot_group['volume'],plot_group['bp'],0)
+            plot_compare(plot_group['volume'],plot_group['pred'],0)
+            
+            
+            group = dgroup.set_index('time_window_s')[['volume','pred']].loc[train_seq,:]
+            arima_result.append(MAPE.mape(group))
+            
+            
+    result = np.sum(bp_result)/len(bp_result)
+    print('final',result)
+    result = np.sum(arima_result)/len(arima_result)
+    print('arima',result)
+    return result
 
-def cache(config,fdir='global_config.txt'):
+def df_modification(df,start='10/18/2016 06:00',freq = '20Min',predict=False,days=7):
+    '''
+    主要的内容是:数据按照时间分割,送入ARIMA训练,得到结果1
+	      整合结果1,送入BPNN训练,得到训练好的网络
+         输出:每个tollgate一个模型
+    '''
+    origin,train_seq = load(start=start,freq=freq,normalize = False,periods=6,days=days)
+    if predict:
+        train_seq = train_seq + Hour(2)
+        
+    inter = df.groupby('tollgate')
+    for t,tgroup in inter:
+        ds = tgroup.groupby('direction')
+        for d,dgroup in ds:
+            group = dgroup.set_index('time_window_s')[['volume','pred','residual','bp']].loc[train_seq,:]
+            print(group)
+            ts = modification(group.loc[:,'bp'])
+#            sys.exit()
+            
+def cache(config,fdir='volume_global_config.txt'):
     if len(config)>0:
         f = open(fdir,'w')
         json.dump(config,f)
@@ -265,44 +407,104 @@ def cache(config,fdir='global_config.txt'):
         config = json.load(f)
         f.close()
         return config
-def final_agg(fdir=r'final.csv'):
+def final_agg(fdir=r'time_final.csv'):
     df = pd.read_csv(fdir)
     df.loc[:,'time_window'] = '[' + df['time_window_s'] +','+ df['time_window_e'] +')'
     df.loc[:,'volume'] = df.loc[:,'pred']
+    df = df[['tollgate','direction','time_window','volume']]
+    df.to_csv(r'../volume_submit_time.csv',index=False)
+    
+def bp_final_agg(fdir=r'bp_test_result.csv'):
+    df = load_volume(fdir)
+    df.loc[:,'time_window_e'] = df.time_window_s + Minute(20)
+    df.to_csv(fdir,index = False)
+    df =  pd.read_csv(fdir)
+    df.loc[:,'time_window'] = '[' + df['time_window_s'] +','+ df['time_window_e'] +')'
+    df.loc[:,'volume'] = df.loc[:,'bp']
     df = df[['tollgate','time_window','direction','volume']]
-    df.to_csv(r'../submit_volume.csv',index=False)
+    df.to_csv(r'../bp_submit_volume.csv',index=False)
     
 GLOBAL = {}
-train_f = '../train'
+train_f = r'../train/'
+arima_path = r'../arima/'
+this = 'time'
+bp_train_iter = 50000
 if __name__ == '__main__':
-    GLOBAL = cache(GLOBAL)
-    print(GLOBAL)
-    traints = ['10/18/2016 06:00','10/18/2016 15:00']
+#    GLOBAL = cache(GLOBAL)
+#    print(GLOBAL)
+    traints = ['9/19/2016 06:00','9/19/2016 15:00']
+    middle = ['10/18/2016 06:00','10/18/2016 15:00']
     testts = ['10/25/2016 06:00','10/25/2016 15:00']
     trainlist = []
     testlist=[]
+    bp_list = []
+#####    #arima train and test
     for i in range(len(traints)):
-        GLOBAL,traindf = train(GLOBAL,start=traints[i],freq='20Min',tollgate=1)
-        df = arima_pred(GLOBAL,start=testts[i],freq='20Min',tollgate=1)
+        GLOBAL,traindf = train(GLOBAL,start=traints[i],freq='20Min',days=36,periods=12)
+        pred4hour,pred2hour = arima_pred(GLOBAL,start=testts[i],freq='20Min',periods=12,days=7)
         trainlist.append(traindf)
-        testlist.append(df)
+        testlist.append(pred2hour)
+        bp_list.append(pred4hour)
     df = pd.concat(testlist)
     df.index.name = 'time_window_s'
-    print(df.head())
-    df.to_csv(r'final.csv')
+    df.to_csv(r'volume_final.csv')#预测集结果
+    df = pd.concat(bp_list)
+    df.to_csv(r'volume_final_bp.csv')#预测集4小时结果
     df = pd.concat(trainlist)
-    df.to_csv(r'total.csv')
+    df.to_csv(r'volume_total.csv')#训练集预测结果
     GLOBAL = cache(GLOBAL)
     final_agg()
-#    bp_train()
-#    rbf_train()
-#    test(freq='20Min',tollgate=1)
-
-
-
-
-
-
+    
+    for i in range(len(traints)):
+        bp_train(fdir=r'volume_total.csv',start=traints[i],days=36)
+        
+    #训练集BP修正
+    dflist = []
+    for i in range(len(middle)):
+        df = bp_test(fdir=r'volume_total.csv',start=middle[i],predict=False,days=7)
+        dflist.append(df)
+    df = pd.concat(dflist)
+    df.to_csv(r'bp_result.csv')
+        
+    #使用model继续训练
+    print('将模型中没有的时间 段继续训练，可以看到收敛程度')
+    dflist = []
+    for i in range(len(testts)):
+        df = bp_next_train(fdir=r'bp_result.csv',start=testts[i],days=7)
+        dflist.append(df)
+    df = pd.concat(dflist)
+    df.to_csv(r'bp_result.csv')
+#
+    df = load_volume(fdir=r'bp_result.csv')
+    df = df[pd.notnull(df['bp'])]
+    for i in range(len(testts)):
+        df_modification(df,start=middle[i],predict=False,days=7)
+#    evalute
+    df = load_volume(fdir=r'bp_result.csv')
+    df = df[pd.notnull(df['bp'])]
+    for i in range(len(middle)):
+        evalute(df,start=middle[i],predict=False,days=7)
+#
+##############################################################
+#    '''
+#        在测试集上，使用BP预训练模型测试
+#        测试集BP修正
+#    '''
+#    
+#    dflist = []
+#    for i in range(len(middle)):
+#        df = bp_test(start=middle[i],test=True,predict=False,days=7)
+#        dflist.append(df)
+#    df = pd.concat(dflist)
+#    df.to_csv(r'bp_test_result.csv')
+###        
+#
+#    #evalute
+#    df = load_volume(fdir=r'bp_test_result.csv')
+#    df = df[pd.notnull(df['bp'])]
+#    for i in range(len(middle)):
+#        evalute(df,start=middle[i],predict=False,days=7)
+#    bp_final_agg()
     '''
     输入点为当前时间t
     输出为需要预测的时间t+T

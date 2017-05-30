@@ -106,6 +106,7 @@ class bp_net:
             self.session.run(init)
         
             step = 1
+            cost = np.inf
             while step  < training_iters:
                 # Run the optimizer using this batch of training data.
                 # TensorFlow assigns the variables in feed_dict_train
@@ -125,9 +126,9 @@ class bp_net:
                                                      self.batch_size : N})
                     print("Iter " + str(step) + ", Minibatch Loss= " +\
                     "{:.6f}".format(cost) + ", Training Accuracy= " + "{:.5f}".format(acc))
-                    if cost < 0.1:
-                        self.saver.save(self.session,save_path=os.path.join(self.modeldir,self.modelname), global_step=step)
-                        break
+                    if cost > 10:
+                        print('delay schedure for 50000')
+                        training_iters += 5000
                 step += 1
             # 如果准确率大于50%,保存模型,完成训练
             self.saver.save(self.session,save_path=os.path.join(self.modeldir,self.modelname), global_step=step)
@@ -204,9 +205,21 @@ class bp_net:
 #            self.session.run(tf.global_variables_initializer())#>0.11rc 更新了模型保存方式
             ckpt = tf.train.get_checkpoint_state(self.modeldir)
             if ckpt and ckpt.model_checkpoint_path:
-                print(''.join([ckpt.model_checkpoint_path,'.meta']))
-                self.saver = tf.train.import_meta_graph(''.join([ckpt.model_checkpoint_path,'.meta']))
-                self.saver.restore(self.session,ckpt.model_checkpoint_path)
+                checked = ''.join([ckpt.model_checkpoint_path,'.meta'])
+                print(checked)
+                param = ''.join([self.modeldir,self.modelname,'-',str(self.training_iters),'.meta'])
+                path = ''.join([self.modeldir,self.modelname,'-',str(self.training_iters)])
+                if checked is param:
+                    self.saver = tf.train.import_meta_graph(checked)
+                    self.saver.restore(self.session,ckpt.model_checkpoint_path)
+                else:
+                    print('load your model',param)
+                    try:
+                        self.saver = tf.train.import_meta_graph(param)
+                        self.saver.restore(self.session,path)
+                    except Exception as e:
+                        print('load model',e)
+                        sys.exit(0)
             '''restore tensor from model'''
             _input = self.graph.get_tensor_by_name('x:0')
             _input1 = self.graph.get_tensor_by_name('x_1:0')
@@ -227,6 +240,7 @@ class bp_net:
             self.session.run(init)
             
             step = 1
+            cost = np.inf
             while step  < self.training_iters:
                 # Run the optimizer using this batch of training data.
                 # TensorFlow assigns the variables in feed_dict_train
@@ -236,7 +250,7 @@ class bp_net:
                                                         _input1:_X,
                                                         _out : _Y,
                                                         _out1 : _Y})
-                if step % 100 == 0:
+                if step % 5000 == 0:
                     # 计算精度
                     acc = self.session.run(acct_res, feed_dict={_input: _X, 
                                                         _input1:_X,
@@ -249,12 +263,14 @@ class bp_net:
                                                         _out1 : _Y})
                     print("Iter " + str(step) + ", Minibatch Loss= " +\
                     "{:.6f}".format(cost) + ", Training Accuracy= " + "{:.5f}".format(acc))
+                    if cost < 1:
+                        break
                 step += 1
-            # 如果准确率大于50%,保存模型,完成训练
-            self.saver.save(self.session,save_path=os.path.join(self.modeldir,'bp.model'), global_step=step)
+#            # 如果准确率大于50%,保存模型,完成训练
+#            self.saver.save(self.session,save_path=os.path.join(self.modeldir,'bp.model'), global_step=step)
             #test
-            pred = self.session.run(y_pre_cls,feed_dict={_input:_X,
-                                                         _input1 : _X})
+            pred = self.session.run(y_pre_cls,feed_dict={_input:Xtest,
+                                                         _input1 : Xtest})
             print(np.sum(pred,axis=0))
             print(np.sum(Ytest,axis=0))
     

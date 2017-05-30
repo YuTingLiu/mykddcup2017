@@ -16,6 +16,44 @@ import matplotlib.pylab as plt
 import sys 
 from pandas.tseries.offsets import Hour
 
+
+def gen_df(fdir='union.csv',start='10/8/2016 06:00',freq='20Min',normalize = False,pat = False,periods=72,days=7):
+    '''
+    help fun
+    '''
+    if freq is '20Min':
+        df = load_volume(fdir=fdir)
+        train_seq = produce_seq(start=start,periods=periods,freq='20Min',days = days)
+        if len(train_seq) != 72*20:
+            print('train_seq len ',len(train_seq))
+#            sys.exit()
+    else:
+        sys.exit(0)
+#    print(df)
+    return df,train_seq
+
+def gen_test(start='10/18/2016 08:00',freq='T',normalize = False,test = True,pat = False,periods=6):
+    
+    test_seq = produce_seq(start=start,periods=periods,freq='20Min',days = 7)
+    return test_seq
+    
+def produce_seq(start='09/19/2016 00:20',periods=20,freq='T',days = 7):
+    '''
+    help fun to produce time sequence
+    '''
+    seq = pd.date_range(start=start,periods=periods,freq=freq)
+    seq1 = seq
+    for day in  range(days-1):
+        seq = seq + Day()
+        seq1 += seq
+    return seq1
+
+def next_20min(seq, m=20):
+    '''
+    add constant time to seq
+    '''
+    return seq + Minute(m)
+
 def datetime2str(dt):
     return dt.strftime("%Y-%m-%d %H:%M:%S") 
 
@@ -33,22 +71,9 @@ def load_test(fdir='test1_20min_avg_volume.csv'):
     df.loc[:,'time_window_s']=pd.to_datetime(df['time_window_s'],format=r'%Y/%m/%d %H:%M:%S')
     return df
     
-def prep(df,pat = True,normalize=True,weekday=True):
-    #add some patten here
-    df.loc[:,'pattern'] = 0
-    if pat is True:
-        different_volume = [0,1,2]
+def prep(df,pat = True,normalize=False,weekday=True):
+    #add some patten here     
         
-        df = df.set_index('time_window_s')
-        print(len(df))
-        df1 = df['09/19/2016':'9/30/2016']
-        df1.loc[:,'pattern'] = 0
-        df2 = df['10/1/2016':'10/7/2016']
-        df2.loc[:,'pattern'] = 1
-        df3 = df['10/8/2016':'10/17/2016']
-        df3.loc[:,'pattern'] = 0
-        df = pd.concat([df1,df2,df3])
-        df = df.reset_index()
     #Adaptive and Natural Computing Algorithms: 10th International Conference ..
     #normalize the traffic flow data to daily average
     if normalize is True:
@@ -68,6 +93,18 @@ def prep(df,pat = True,normalize=True,weekday=True):
         df = df.join(s)
         s = pd.Series(df['time_window_s'].dt.minute,index=df.index,name='minute')/60
         df = df.join(s)
+    
+    df.loc[:,'pattern'] = 0
+    if pat is True:
+        df = df.set_index('time_window_s')
+        df.loc[:,'pattern'] = 0
+        seq = pd.date_range(start='10/1/2016',end='10/7/2016',freq='20Min')        
+        df.loc[seq,'pattern'] = 1
+        df=df.reset_index()
+        
+        #添加是否上班
+#        df.loc[:,'is_work'] = 1
+#        df[]
     print(df.head())
     return df
 
@@ -217,33 +254,86 @@ class model1:
         df.loc[:,'time_window_s']=pd.to_datetime(df['date_time'],format=r'%Y/%m/%d %H:%M:%S')
     #    print(df.head())
         df.loc[:,'volume'] = 1
-        aggregate = lambda x : x.set_index('time_window_s').resample('20Min').agg(sum).fillna(1)# avoid nan and inf
+        aggregate = lambda x : x.set_index('time_window_s').resample('20Min').agg(np.sum).fillna(np.mean(x))# avoid nan and inf
         df = df.groupby(['tollgate','direction'])[['time_window_s','volume']].apply(aggregate)
     #    print(df.head(100))
         return df.reset_index()
     
-    def train_union(self):
-        in_file=r'E:\大数据实践\天池大赛KDD CUP\dataSet_phase2\volume(table 6)_training2.csv'
+    def data_union(self,data,weather):
+        in_file=data
         src = self.load_volume_20Min(in_file)
-        df = load_weather(fdir=r'E:\大数据实践\天池大赛KDD CUP\data\dataSets\testing_phase1\weather (table 7)_test1.csv')
+        df = load_weather(fdir=weather)
         src = src.set_index('time_window_s')
         df = df.set_index('time_window_s')
         df = src.join(df,how='left')
         print(len(src),len(df))
-        print(df)
-        df.to_csv(r'train_union1.csv')
-        
-        
-    def test_union(self):
-        in_file=r'E:\大数据实践\天池大赛KDD CUP\dataSet_phase2\volume(table 6)_test2.csv'
-        src = self.load_volume_20Min(in_file)
-        df = load_weather(fdir=r'E:\大数据实践\天池大赛KDD CUP\dataSet_phase2\weather (table 7)_2.csv')
-        src = src.set_index('time_window_s')
-        df = df.set_index('time_window_s')
-        df = src.join(df,how='left')
-        print(len(src),len(df))
-        print(df)
-        df.to_csv(r'test_union1.csv')
+        if len(src) != len(df):
+            sys.exit()
+        df.to_csv(r'volume_train_union.csv')
+        return df
+    
+    def union(self,dflist):
+        for df in dflist:
+            print(df.head())
+        df = pd.concat(dflist)
+        df = df.reset_index()
+        df = prep(df)
+        df.to_csv(r'volume_union.csv')
+
+def modification(ts , method=2):
+    step = 1
+    #规则
+    if len(ts[ts>1000]):
+        if ts.mean() > 1000:
+            print(ts.describe())
+            ts[ts>1000] = abs(ts-ts.median())/ts.mad()
+            print(ts)
+            if len(ts[ts>1000]):
+                sys.exit('ts>1000')
+        else:
+            ts[ts>1000] = ts.mean()
+    print(ts)
+    print(ts.describe())
+    #参考 ： 东方金工《选股因子数据的异常值处理和正态转换》
+    print('#1. 标准差3倍的数据归纳为异常值')
+    print(ts.std()*3,':',ts[ts>ts.std()*3])
+    print('#2. 用样本中位数MAD代替标准差')
+    print(ts.mad()*3,':',ts[ts>ts.mad()*3])
+    print('#3. 使用Hubert& Vandervieren （2007） Boxplot 改进方法')
+    from statsmodels.stats.stattools import medcouple
+    mc = medcouple(ts)
+    q1 = ts.quantile(0.25)
+    q3 = ts.quantile(0.75)
+    median = ts.median()
+    IQR=q3-q1
+    if mc > 0:
+        l = q1 - 1.5*np.exp(-3.5*mc)*IQR
+        u = q3 + 1.5*np.exp(mc)*IQR
+    if mc < 0:
+        l = q1 - 1.5*np.exp(-4*mc)*IQR
+        u = q3 + 1.5*np.exp(mc)*IQR
+    print('low',l,'high',u)
+    print(ts[(ts<l)&(ts>u)])
+    
+    ts1 = ts.copy()
+    if method == 1:
+        while len(ts1[ts1>ts1.std()*3]) > 0:
+            print ('modi ',ts1.describe())
+            ts1[ts1>ts1.std()*3] = ts1.std()*3
+    if method == 2:
+        while len(ts1[abs(ts1-median)/ts.mad() >2]) > 0 and step <10:
+            print ('modi ',ts1.describe())
+            ts1[abs(ts1-median)/ts.mad() >2] = abs(ts1-median)/ts.mad() # 剔除偏离中位数x倍以上的数据
+            step += 1
+    if method == 3:
+        while len(ts1[ts1<l]) > 0 and len(ts1[ts1>u]) > 0:
+            print ('modi ',ts1.describe())
+            ts1[ts1<l] = l
+            ts1[ts1>u] = u
+    plt.plot(ts1.index,ts1.values,'g')
+    plt.plot(ts1.index,ts.values,'r')
+    plt.show()
+    return ts1
 
 def main():
 
@@ -270,10 +360,28 @@ def main():
 #    print(np.array(x_list).shape)
 #    print(np.array(y_list).shape)
 
+    dflist = []
     model = model1()
-    model.train_union()
-    model.test_union()
+    in_file=r'E:\大数据实践\天池大赛KDD CUP\dataSet_phase2\volume(table 6)_training2.csv'
+    fdir=r'E:\大数据实践\天池大赛KDD CUP\data\dataSets\testing_phase1\weather (table 7)_test1.csv'
+    dflist.append(model.data_union(in_file,fdir))
+    
+    in_file=r'E:\大数据实践\天池大赛KDD CUP\data\dataSets\training\volume(table 6)_training.csv'
+    fdir=r'E:\大数据实践\天池大赛KDD CUP\data\weather (table 7)_training_update.csv'
+    dflist.append(model.data_union(in_file,fdir))
+    
+    
+    in_file=r'E:\大数据实践\天池大赛KDD CUP\dataSet_phase2\volume(table 6)_test2.csv'
+    fdir=r'E:\大数据实践\天池大赛KDD CUP\dataSet_phase2\weather (table 7)_2.csv'
+    dflist.append(model.data_union(in_file,fdir))
+    
+    
+#    in_file=r'E:\大数据实践\天池大赛KDD CUP\data\dataSets\testing_phase1\trajectories(table 5)_test1.csv'
+#    fdir=r'E:\大数据实践\天池大赛KDD CUP\data\dataSets\testing_phase1\weather (table 7)_test1.csv'
+#    dflist.append(model.data_union(in_file,fdir))
 
+    model.union(dflist)
     
 if __name__ == '__main__':
-    main()
+    this = ''
+#    main()
