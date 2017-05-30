@@ -235,8 +235,8 @@ def bp_test(start='10/18/2016 06:00',freq='20Min',predict=False,test=False,days=
     df.index.name = 'time_window_s'
     return df
             
-def gbdt_train(start='10/18/2016 06:00',freq='20Min',predict=False,test=False,days=7,periods=6): 
-    _,train_seq = load(start=start,freq=freq,normalize = False,periods=12,days=days,pat=True)
+def gbdt_train(start='10/18/2016 06:00',freq='20Min',days=7,periods=12): 
+    _,train_seq = load(start=start,freq=freq,normalize = False,periods=periods,days=days,pat=True)
     df = pd.read_csv(r'time_total.csv')
     df.loc[:,'time_window_s']=pd.to_datetime(df['time_window_s'],format=r'%Y/%m/%d %H:%M:%S')
     df.loc[:,'residual'] = df['travel_time']-df['pred']
@@ -262,30 +262,33 @@ def gbdt_train(start='10/18/2016 06:00',freq='20Min',predict=False,test=False,da
 #    x_data = np.array(batch_x[['pressure','sea_pressure','wind_direction','wind_speed',
 #                                'temperature','rel_humidity','precipitation',
 #                                'dayofweek','hour','minute','direction','pattern']])
+            train_size = len(x_data)-12            
             y_data = np.array(batch_x.loc[:,'residual'])#修改为残差
             y_data = y_data.reshape((len(y_data),1))
-    
-            train_size = len(x_data)-int(test_size)
-            
             #begin bp test
             gbdt = kdd_gbdt()
             gbdt.save_name = ''.join(['gbdt',str(t),str(d),str(hour)])
-            gbdt.train_times = 10
+            gbdt.train_times = 1
+            
+            best_params = gbdt.choose(x_data,y_data)
+            print(best_params)
+            gbdt.params = best_params
             gbdt.train(x_data,y_data)
             gbdt.save_model()
-            
-            
-            #预测结束后
-            print('pred length',len(pred))
-            print('true length ',len(batch_y))
-            pred = pd.Series(data=np.array(pred).flatten(),index = train_seq)
-            
-            batch_x.loc[:,'residual'] = pred
-            batch_x.loc[:,'bp'] = np.exp((batch_x['residual']+np.log(batch_x['pred'])))
-            outputlist.append(batch_x)
-    print('ouputlist',len(outputlist))
-    df = pd.concat(outputlist)
-    df.index.name = 'time_window_s'
+
+#            gbdt.select(x_data[:train_size],y_data[:train_size],x_data[train_size:],y_data[train_size:])
+#            
+#            #预测结束后
+#            print('pred length',len(pred))
+#            print('true length ',len(batch_y))
+#            pred = pd.Series(data=np.array(pred).flatten(),index = train_seq)
+#            
+#            batch_x.loc[:,'residual'] = pred
+#            batch_x.loc[:,'gbdt'] = np.exp((batch_x['residual']+np.log(batch_x['pred'])))
+#            outputlist.append(batch_x)
+#    print('ouputlist',len(outputlist))
+#    df = pd.concat(outputlist)
+#    df.index.name = 'time_window_s'
     return df
 
 def evalute(df,start='10/18/2016 06:00',freq = '20Min',predict=False,days=7):
@@ -352,7 +355,7 @@ def bp_modification(df,start='10/18/2016 06:00',freq = '20Min',predict=False,day
             
             #这里可以添加一个权值处理,即线性回归
             print(group)
-            group.loc[:,'bp'] = 0.5*group.loc[:,'bp'] + 0.8*group.loc[:,'pred']
+            group.loc[:,'bp'] = 0.4*group.loc[:,'bp'] + 0.6*group.loc[:,'pred']
             print(group['bp'])
 #            sys.exit()
 #            if t=='B' and d == 1:
@@ -430,6 +433,10 @@ if __name__ == '__main__':
 #    for i in range(len(traints)):
 #        bp_train(start=traints[i],days=17)
 #        
+        
+    for i in range(len(traints)):
+        gbdt_train(start=traints[i],days=17)
+        
 #    #####训练集BP修正
 #    dflist = []
 #    for i in range(len(traints)):
@@ -438,19 +445,19 @@ if __name__ == '__main__':
 #    df = pd.concat(dflist)
 #    df.to_csv(r'bp_result.csv')
 #        
-#    #使用model继续训练
+#    ###使用model继续训练
 #    
-#    evalute
+#    ###evalute
 #    df = load_volume(fdir=r'bp_result.csv')
 #    df = df[pd.notnull(df['bp'])]
 #    for i in range(len(traints)):
 #        evalute(df,start=traints[i],predict=False,days=17)
-
-#############################################################
-    '''
-        在测试集上，使用BP预训练模型测试
-        测试集BP修正
-    '''
+#
+##############################################################
+#    '''
+#        在测试集上，使用BP预训练模型测试
+#        测试集BP修正
+#    '''
 #    predict = True
 #    dflist = []
 #    for i in range(len(testts)):
@@ -459,19 +466,11 @@ if __name__ == '__main__':
 #    df = pd.concat(dflist)
 #    df.to_csv(r'bp_test_result.csv')
 ##   
-#    
-##    evalute
-#    df = load_volume(fdir=r'bp_test_result.csv')
-#    df = df[pd.notnull(df['bp'])]
-#    for i in range(len(testts)):
-#        evalute(df,start=testts[i],predict=predict,days=7)
-#
-#
 #    modifyed = []
 #    df = load_volume(fdir=r'bp_test_result.csv')
 #    df = df[pd.notnull(df['bp'])]
 #    for i in range(len(testts)):
-#        df1 = bp_modification(df,start=testts[i],predict=predict,days=7,method=3)   
+#        df1 = bp_modification(df,start=testts[i],predict=predict,days=7,method=2)   
 #        modifyed.append(df1)
 #    df = pd.concat(modifyed)
 #    df.index.name = 'time_window_s'
@@ -483,7 +482,9 @@ if __name__ == '__main__':
 #    df = df[pd.notnull(df['bp'])]
 #    for i in range(len(testts)):
 #        evalute(df,start=testts[i],predict=predict,days=7)
-    bp_final_agg(fdir=r'bp_modifyed.csv')
+        
+        
+#    bp_final_agg(fdir=r'bp_modifyed.csv')
 #    
     
         
