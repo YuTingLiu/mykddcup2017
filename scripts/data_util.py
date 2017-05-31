@@ -71,7 +71,7 @@ def load_test(fdir='test1_20min_avg_volume.csv'):
     df.loc[:,'time_window_s']=pd.to_datetime(df['time_window_s'],format=r'%Y/%m/%d %H:%M:%S')
     return df
     
-def prep(df,pat = True,normalize=False,weekday=True):
+def prep(df,pat = True,normalize=False,weekday=False):
     #add some patten here     
         
     #Adaptive and Natural Computing Algorithms: 10th International Conference ..
@@ -96,10 +96,18 @@ def prep(df,pat = True,normalize=False,weekday=True):
     
     df.loc[:,'pattern'] = 0
     if pat is True:
+        # 中秋国庆假期
+        start1 = datetime(2016, 9, 15)
+        end1 = datetime(2016, 9, 17)
+        start2 = datetime(2016, 10, 1)
+        end2 = datetime(2016, 10, 7)
+        # 增加开学日期
+        start3 = datetime(2016, 8, 29)
+        end3 = datetime(2016, 9, 2)
+        rng = pd.date_range(start1, end1).append(pd.date_range(start2, end2)).append(pd.date_range(start3, end3))
         df = df.set_index('time_window_s')
-        df.loc[:,'pattern'] = 0
-        seq = pd.date_range(start='10/1/2016',end='10/7/2016',freq='20Min')        
-        df.loc[seq,'pattern'] = 1
+        df.loc[:,'pattern'] = 0    
+        df.loc[rng,'pattern'] = 1
         df=df.reset_index()
         
         #添加是否上班
@@ -121,6 +129,22 @@ def load_weather(fdir=r'E:\大数据实践\天池大赛KDD CUP\data\weather (tab
     #normalize
     df = df.apply(lambda x : (x-x.mean())/x.std())
     return df.reset_index()
+
+#分箱:
+
+def binning(col, cut_points, labels=None):
+    #Define min and max values:
+    minval = col.min()
+    maxval = col.max()
+    #利用最大值和最小值创建分箱点的列表
+    break_points = [minval] + cut_points + [maxval]
+    print(break_points)
+    #如果没有标签，则使用默认标签0 ... (n-1)
+    if not labels:
+        labels = range(len(cut_points)+1)
+    #使用pandas的cut功能分箱
+    colBin = pd.cut(col,bins=break_points,labels=labels,include_lowest=True)
+    return colBin
 
 def fun(df1):
     '''
@@ -254,9 +278,28 @@ class model1:
         df.loc[:,'time_window_s']=pd.to_datetime(df['date_time'],format=r'%Y/%m/%d %H:%M:%S')
     #    print(df.head())
         df.loc[:,'volume'] = 1
-        aggregate = lambda x : x.set_index('time_window_s').resample('20Min').agg(np.sum).fillna(np.mean(x))# avoid nan and inf
-        df = df.groupby(['tollgate','direction'])[['time_window_s','volume']].apply(aggregate)
-    #    print(df.head(100))
+        def aggregate(group):
+            #rename model's values
+            group.loc[:,'model'] = 'model_'+group.loc[:,'model'].astype(str)
+            #rename etc's values
+            group.loc[:,'is_etc'] = 'etc_'+group.loc[:,'model'].astype(str)
+            #pivot_table first
+            group.loc[:,'count'] = 1
+            model = pd.pivot_table(group,index=['tollgate','direction','time_window_s'],values='count',columns=['model'],aggfunc=np.sum,fill_value=0)
+            etc = pd.pivot_table(group,index=['tollgate','direction','time_window_s'],values='count',columns=['is_etc'],aggfunc=np.sum,fill_value=0)
+            group = group.set_index(['tollgate','direction','time_window_s'])[['volume']]
+            group = group.join(model)
+            group = group.join(etc)
+#            print(group)
+#            group.to_csv(r'test.csv')
+#            sys.exit()
+            group = group.reset_index().set_index('time_window_s')
+            group = group.resample('20Min').agg(np.sum).fillna(0).drop(['tollgate','direction'],axis=1)
+#            print(group)
+#            group.to_csv(r'test.csv')
+#            sys.exit()
+            return group
+        df = df.groupby(['tollgate','direction']).apply(aggregate)
         return df.reset_index()
     
     def data_union(self,data,weather):
@@ -277,10 +320,10 @@ class model1:
             print(df.head())
         df = pd.concat(dflist)
         df = df.reset_index()
-        df = prep(df)
-        df.to_csv(r'volume_union.csv')
+        df = prep(df).fillna(0)
+        df.to_csv(r'volume_union.csv',index=False)
 
-def modification(ts , method=2):
+def modification(ts , method=2,show=False):
     step = 1
     #规则
     if len(ts[ts>500]):
@@ -291,14 +334,15 @@ def modification(ts , method=2):
                 sys.exit('ts>1000')
         else:
             ts[ts>500] = ts.mean()
-    print(ts)
-    print(ts.describe())
-    #参考 ： 东方金工《选股因子数据的异常值处理和正态转换》
-    print('#1. 标准差3倍的数据归纳为异常值')
-    print(ts.std()*3,':',ts[ts>ts.std()*3])
-    print('#2. 用样本中位数MAD代替标准差')
-    print(ts.mad()*3,':',ts[ts>ts.mad()*3])
-    print('#3. 使用Hubert& Vandervieren （2007） Boxplot 改进方法')
+#    print(ts)
+    if show:
+        print(ts.describe())
+        #参考 ： 东方金工《选股因子数据的异常值处理和正态转换》
+        print('#1. 标准差3倍的数据归纳为异常值')
+        print(ts.std()*3,':',ts[ts>ts.std()*3])
+        print('#2. 用样本中位数MAD代替标准差')
+        print(ts.mad()*3,':',ts[ts>ts.mad()*3])
+        print('#3. 使用Hubert& Vandervieren （2007） Boxplot 改进方法')
     from statsmodels.stats.stattools import medcouple
     mc = medcouple(ts)
     q1 = ts.quantile(0.25)
@@ -311,8 +355,8 @@ def modification(ts , method=2):
     if mc < 0:
         l = q1 - 1.5*np.exp(-4*mc)*IQR
         u = q3 + 1.5*np.exp(mc)*IQR
-    print('low',l,'high',u)
-    print(ts[(ts<l)&(ts>u)])
+#    print('low',l,'high',u)
+#    print(ts[(ts<l)&(ts>u)])
     
     ts1 = ts.copy()
     if method == 1:
@@ -329,10 +373,44 @@ def modification(ts , method=2):
             print ('modi ',ts1.describe())
             ts1[ts1<l] = l
             ts1[ts1>u] = u
-    plt.plot(ts1.index,ts1.values,'g')
-    plt.plot(ts1.index,ts.values,'r')
-    plt.show()
+    if show:
+        plt.plot(ts1.index,ts1.values,'g')
+        plt.plot(ts1.index,ts.values,'r')
+        plt.show()
     return ts1
+
+def filter(ts,method=1,periods=12):
+    '''
+    添加新的滤波器
+    '''
+    from scipy.signal import medfilt
+    from scipy.signal import wiener
+    from scipy.signal import detrend
+    
+    data = ts.values
+    time = ts.index
+    
+    plt.plot(time,data ,label='origin')
+    plt.xlabel("year")
+    plt.grid(True)
+    plt.legend()
+    plt.show()
+    plt.plot(time,medfilt(data),lw=2,label="Median")
+    plt.xlabel("year")
+    plt.grid(True)
+    plt.legend()
+    plt.show()
+    plt.plot(time,wiener(data),'--',lw=2,label="Wiener")
+    plt.xlabel("year")
+    plt.grid(True)
+    plt.legend()
+    plt.show()
+    plt.plot(time,detrend(data), lw=3 ,label="Detrend")
+    plt.xlabel("year")
+    plt.grid(True)
+    plt.legend()
+    plt.show()
+    return ts
 
 def main():
 

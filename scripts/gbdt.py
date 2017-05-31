@@ -27,7 +27,7 @@ class kdd_gbdt:
         self.name = name
         self.save_name = 'should the name of saved model'
         self.params = {'n_estimators': 500, 'max_depth': 4, 'min_samples_split': 2,
-                  'learning_rate': 0.01, 'loss': 'ls'}
+                  'learning_rate': 0.01, 'loss': 'ls','max_depth':10}
         self.model = ''
         self.test_size = 0.2
         self.save_path = r'../model/'
@@ -35,16 +35,38 @@ class kdd_gbdt:
         
     def choose(self,_X,_Y):
         model = GradientBoostingRegressor(n_estimators=500)
-        param_grid = {'learning_rate': [0.1],
-                      'max_depth': [10],
-                      'min_samples_leaf': [3],
+        param_grid = {'learning_rate': [0.1, 0.05, 0.01],
+                      'max_depth': [10, 15, 20],
+                      'min_samples_leaf': [3, 5, 10, 20],
                       # 'max_features': [1.0, 0.3, 0.1] ## not         possible in our example (only 1 fx)
           }
         #search
 #        param_grid = {'n_estimators': [i for i in range(Nminedge,Nmaxedge,Nstep)], 
 #                                       'max_depth': [j for j in range(Dminedge,Dmaxedge,Dstep)]}
         print('begin search')
-        grid_search = GridSearchCV(estimator = model,param_grid = param_grid,n_jobs=4)
+        grid_search = GridSearchCV(model,param_grid = param_grid)
+        print('fit')
+        grid_search.fit(_X, _Y)
+        print('done')
+        best_parameters = grid_search.best_estimator_.get_params()
+        for para, val in best_parameters.items():
+            print (para, val)
+        return best_parameters
+        
+    def choose1(self,_X,_Y):
+        model = GradientBoostingRegressor(n_estimators=500)
+        steps = [("my_classifier", model)]
+        param_grid = {'learning_rate': [0.1, 0.05, 0.01],
+                      'max_depth': [10, 15, 20],
+                      'min_samples_leaf': [3, 5, 10, 20],
+                      # 'max_features': [1.0, 0.3, 0.1] ## not         possible in our example (only 1 fx)
+          }
+        #search
+#        param_grid = {'n_estimators': [i for i in range(Nminedge,Nmaxedge,Nstep)], 
+#                                       'max_depth': [j for j in range(Dminedge,Dmaxedge,Dstep)]}
+        pipe = Pipeline(steps)
+        print('begin search')
+        grid_search = GridSearchCV(pipe,param_grid = param_grid)
         print('fit')
         grid_search.fit(_X, _Y)
         print('done')

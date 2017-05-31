@@ -88,9 +88,9 @@ class bp_net:
             #如何修改误差公式？   仍然需要优化
             #https://mattmazur.com/2015/03/17/a-step-by-step-backpropagation-example/
             #使用均方误差函数
-#            loss = tf.reduce_sum(tf.pow(a_2 - self.y_true,2))/(self.batch_size)
+            loss = tf.reduce_sum(tf.pow(a_2 - self.y_true,2))/(self.batch_size)
 #            loss = tf.reduce_mean(tf.squared_difference(a_2, self.y_true))
-            loss = tf.nn.l2_loss(a_2 - self.y_true)
+#            loss = tf.nn.l2_loss(a_2 - self.y_true)
             
             #other loss
 #            loss = -tf.reduce_sum(self.y_true * tf.log(a_2))

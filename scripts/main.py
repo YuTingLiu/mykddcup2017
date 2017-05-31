@@ -234,6 +234,9 @@ def bp_test(fdir='volume_total.csv',start='10/18/2016 06:00',freq='20Min',predic
             print('true length ',len(batch_y))
             pred = pd.Series(data=np.array(pred).flatten(),index = train_seq)
             
+            
+            pred = modification(pred,3,show=True)
+            
             batch_x.loc[:,'residual'] = pred
             batch_x.loc[:,'bp'] = np.exp((batch_x['residual']+np.log(batch_x['pred'])))
             outputlist.append(batch_x)
@@ -404,7 +407,7 @@ def bp_modification(df,start='10/18/2016 06:00',freq = '20Min',predict=False,day
             
             #这里可以添加一个权值处理,即线性回归
             print(group)
-            group.loc[:,'bp'] = 0.5*group.loc[:,'bp'] + 0.8*group.loc[:,'pred']
+            group.loc[:,'bp'] = 0.5*group.loc[:,'bp'] + 0.5*group.loc[:,'pred']
             print(group['bp'])
 #            sys.exit()
 #            if t=='B' and d == 1:
@@ -488,15 +491,15 @@ if __name__ == '__main__':
 #        dflist.append(df)
 #    df = pd.concat(dflist)
 #    df.to_csv(r'bp_result.csv')
-        
-    #使用model继续训练
-#    print('将模型中没有的时间 段继续训练，可以看到收敛程度')
-#    dflist = []
-#    for i in range(len(testts)):
-#        df = bp_next_train(fdir=r'bp_result.csv',start=testts[i],days=7)
-#        dflist.append(df)
-#    df = pd.concat(dflist)
-#    df.to_csv(r'bp_result.csv')
+#        
+##    使用model继续训练
+##    print('将模型中没有的时间 段继续训练，可以看到收敛程度')
+##    dflist = []
+##    for i in range(len(testts)):
+##        df = bp_next_train(fdir=r'bp_result.csv',start=testts[i],days=7)
+##        dflist.append(df)
+##    df = pd.concat(dflist)
+##    df.to_csv(r'bp_result.csv')
 #
 #    modifyed = []
 #    df = load_volume(fdir=r'bp_result.csv')
@@ -512,25 +515,26 @@ if __name__ == '__main__':
 #    df = df[pd.notnull(df['bp'])]
 #    for i in range(len(middle)):
 #        evalute(df,start=middle[i],predict=False,days=7)
-##
-##############################################################
-#    '''
-#        在测试集上，使用BP预训练模型测试
-#        测试集BP修正
-#    '''
-#    
-#    dflist = []
-#    for i in range(len(testts)):
-#        df = bp_test(fdir='volume_final_bp.csv',start=testts[i],test=True,predict=True,days=7)
-#        dflist.append(df)
-#    df = pd.concat(dflist)
-#    df.to_csv(r'bp_test_result.csv')
-##        
+###
+###############################################################
+##    '''
+##        在测试集上，使用BP预训练模型测试
+##        测试集BP修正
+##    '''
+##    
+##      
+    predict = True  
+    dflist = []
+    for i in range(len(testts)):
+        df = bp_test(fdir='volume_final_bp.csv',start=testts[i],test=True,predict=predict,days=7)
+        dflist.append(df)
+    df = pd.concat(dflist)
+    df.to_csv(r'bp_test_result.csv')
     modifyed = []
     df = load_volume(fdir=r'bp_test_result.csv')
     df = df[pd.notnull(df['bp'])]
     for i in range(len(testts)):
-        df1 = bp_modification(df,start=testts[i],predict=True,days=7,method=3)   
+        df1 = bp_modification(df,start=testts[i],predict=predict,days=7,method=3)   
         modifyed.append(df1)
     df = pd.concat(modifyed)
     df.index.name = 'time_window_s'
@@ -539,8 +543,8 @@ if __name__ == '__main__':
     df = load_volume(fdir=r'bp_modifyed.csv')
     df = df[pd.notnull(df['bp'])]
     for i in range(len(testts)):
-        evalute(df,start=testts[i],predict=True,days=7)
-    bp_final_agg()
+        evalute(df,start=testts[i],predict=predict,days=7)
+    bp_final_agg(fdir=r'bp_modifyed.csv')
     '''
     输入点为当前时间t
     输出为需要预测的时间t+T
